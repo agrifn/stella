@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import ctypes
 import logging
+import re
 import threading
 import time
 
@@ -26,13 +27,15 @@ from .stt_handler import STTHandler
 
 log = logging.getLogger("stella.engine")
 
-_AFFIRMATIVE = {"yes", "yeah", "yep", "confirm", "confirmed", "affirmative",
-                "do it", "go", "execute", "proceed", "engage"}
+_AFFIRMATIVE = ["yes", "yeah", "yep", "confirm", "confirmed", "affirmative",
+                "do it", "go", "execute", "proceed", "engage"]
+# Word-boundary match so "go" matches only the standalone word, NOT "good", "ago",
+# or "let it go" - critical because this gates eject / self destruct.
+_AFFIRMATIVE_RE = re.compile(r"\b(" + "|".join(re.escape(w) for w in _AFFIRMATIVE) + r")\b")
 
 
 def is_affirmative(text: str) -> bool:
-    t = (text or "").lower()
-    return any(w in t for w in _AFFIRMATIVE)
+    return bool(_AFFIRMATIVE_RE.search((text or "").lower()))
 
 
 def is_admin() -> bool:

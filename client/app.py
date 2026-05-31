@@ -110,12 +110,16 @@ def main(argv=None):
 
     def worker():
         import keyboard
-        engine = StellaEngine(cfg, on_event=bridge.on_event,
-                            execute_keys=False if args.dry_run else None)
-        state["engine"] = engine
-        keyboard.add_hotkey(cfg.mode_toggle_key, engine.toggle_mode)
-        engine.warm()
-        engine.run(should_stop=lambda: state["stop"])
+        try:
+            engine = StellaEngine(cfg, on_event=bridge.on_event,
+                                  execute_keys=False if args.dry_run else None)
+            state["engine"] = engine
+            keyboard.add_hotkey(cfg.mode_toggle_key, engine.toggle_mode)
+            engine.warm()
+            engine.run(should_stop=lambda: state["stop"])
+        except Exception as e:  # noqa: BLE001 - surface fatal startup/loop errors
+            log.exception("STELLA worker crashed")
+            bridge.status.emit(f"FATAL: {e}")
 
     threading.Thread(target=worker, daemon=True).start()
 

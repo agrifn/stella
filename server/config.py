@@ -1,7 +1,7 @@
 """Server configuration.
 
 Loads settings from config/settings.json with sane defaults and allows
-environment-vstellable overrides. Kept as a single immutable dataclass so the
+environment-variable overrides. Kept as a single immutable dataclass so the
 rest of the server depends on a typed object, not on raw dict access.
 """
 from __future__ import annotations
