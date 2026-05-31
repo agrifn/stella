@@ -37,6 +37,8 @@ services:
       STELLA_LLM_MODEL: ${STELLA_LLM_MODEL:-llama3.2:3b}
       STELLA_LLM_BASE_URL: ${STELLA_LLM_BASE_URL:-}
       STELLA_LLM_API_KEY: ${STELLA_LLM_API_KEY:-}
+      # UEX Corp API token for "where to buy" item/weapon lookups (optional).
+      STELLA_UEX_TOKEN: ${STELLA_UEX_TOKEN:-}
     ports:
       - "8420:8420"
     # Mount config so command edits (CRUD) persist on the host;

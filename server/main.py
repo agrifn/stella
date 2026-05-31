@@ -47,7 +47,7 @@ async def lifespan(app: FastAPI):
     app.state.cfg = cfg
     app.state.registry = CommandRegistry(cfg.keybinds_path)
     app.state.prompt_builder = PromptBuilder(cfg.system_prompt_path)
-    app.state.knowledge = KnowledgeHandler(cfg.knowledge.enabled)
+    app.state.knowledge = KnowledgeHandler(cfg.knowledge)
     app.state.llm = LLMHandler(
         cfg.llm,
         system_prompt_provider=lambda: app.state.prompt_builder.build(
@@ -56,9 +56,10 @@ async def lifespan(app: FastAPI):
             app.state.knowledge.examples()),
     )
     app.state.tts = TTSHandler(cfg.tts)
-    log.info("STELLA starting: model=%s voice=%s tts_ready=%s commands=%d knowledge=%s",
+    log.info("STELLA starting: model=%s voice=%s tts_ready=%s commands=%d knowledge=%s uex=%s",
              cfg.llm.model, cfg.tts.voice, app.state.tts.ready,
-             len(app.state.registry.intents), cfg.knowledge.enabled)
+             len(app.state.registry.intents), cfg.knowledge.enabled,
+             bool(cfg.knowledge.enabled and cfg.knowledge.uex_token))
     await app.state.llm.warm()
     # Load the knowledge index in the background so it never delays startup.
     asyncio.create_task(app.state.knowledge.load())

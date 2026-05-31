@@ -48,11 +48,18 @@ ONE machine (Windows + WSL2, RTX 5090)
   "Launch STELLA" button.
 - **Pluggable LLM:** local Ollama (default), any OpenAI-compatible endpoint, or Anthropic
   - selected in `.env`.
-- **Knowledge lookups (optional):** ask factual ship questions ("what's the Guardian MX
-  armor rating", "how fast is a Gladius", "Freelancer cargo capacity"). STELLA caches a
-  vehicle index from the StarCitizenWiki API, fuzzy-matches the ship from your speech, and
-  answers from real data. Toggle with `knowledge.enabled` in settings; when off it adds
-  zero overhead (the command path is never touched).
+- **Knowledge lookups (optional):** ask factual questions about ships, locations, and
+  commodities ("what's the Guardian MX armor rating", "how fast is a Gladius", "where is
+  Crusader", "is laranite mineable"). STELLA caches indexes from the StarCitizenWiki API,
+  fuzzy-matches the subject from your speech, and answers from real data. Toggle with
+  `knowledge.enabled` in settings; when off it adds zero overhead (the command path is
+  never touched).
+- **"Where to buy" lookups (optional, UEX):** ask where to buy an item/weapon or what it
+  costs ("where can I buy a P4-AR", "how much is an Arrowhead", "cheapest power plant").
+  Backed by the [UEX Corp](https://uexcorp.space) live trade API - set a free
+  `STELLA_UEX_TOKEN` in `.env` to enable it (no token = this sub-feature is simply off).
+  Shop inventories left the game files in SC 3.20, so this community price data is the only
+  source; UEX has no blueprint/crafting data, so blueprint locations aren't supported.
 
 Measured: ~1.0s from end of speech to in-game action (STT ~0.3s + intent ~0.7s); the
 spoken reply follows in the background so it never delays the action.

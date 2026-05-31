@@ -44,9 +44,14 @@ class TTSConfig:
 
 @dataclass(frozen=True)
 class KnowledgeConfig:
-    # Optional factual lookups (SC ship stats etc). When disabled, the 'ship_info'
+    # Optional factual lookups (SC ship stats etc). When disabled, the 'info'
     # intent is never added to the prompt and no data is fetched - zero overhead.
     enabled: bool = True
+    # UEX Corp API token (free, from uexcorp.space/api/apps). When set AND knowledge
+    # is enabled, STELLA can answer "where to buy / how much" for items, weapons,
+    # armor and ship components. Prefer the STELLA_UEX_TOKEN env var - never commit it.
+    uex_token: str | None = None
+    uex_base: str = "https://api.uexcorp.space/2.0"
 
 
 @dataclass(frozen=True)
@@ -100,6 +105,8 @@ def load_config(settings_path: Path | None = None) -> ServerConfig:
     knowledge_cfg = KnowledgeConfig(
         enabled=(know_enabled.lower() in ("1", "true", "yes")) if know_enabled is not None
         else bool(know.get("enabled", KnowledgeConfig.enabled)),
+        uex_token=_env("STELLA_UEX_TOKEN", know.get("uex_token")),
+        uex_base=_env("STELLA_UEX_BASE", know.get("uex_base", KnowledgeConfig.uex_base)),
     )
 
     return ServerConfig(
