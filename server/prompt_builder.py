@@ -27,7 +27,9 @@ class PromptBuilder:
     def __init__(self, preamble_path: Path):
         self._preamble = preamble_path.read_text(encoding="utf-8").rstrip()
 
-    def build(self, registry: CommandRegistry, knowledge_enabled: bool = False) -> str:
+    def build(self, registry: CommandRegistry,
+              knowledge_intents: list[str] | None = None,
+              knowledge_examples: list[str] | None = None) -> str:
         lines = [self._preamble, "", "Valid intents (intent: description; example phrases):"]
         for cmd in registry.list():
             desc = cmd.description or cmd.intent
@@ -36,16 +38,7 @@ class PromptBuilder:
             if cmd.examples:
                 hints = "  e.g. " + ", ".join(f'"{p}"' for p in cmd.examples[:4])
             lines.append(f"- {cmd.intent}: {desc}{danger}{hints}")
-        if knowledge_enabled:
-            lines.append('- ship_info: the pilot asks ABOUT a specific named SHIP/vehicle '
-                         "(its armor, shields, hull, speed, cargo, crew, mass, manufacturer). "
-                         "If a ship NAME is present, this wins over a power command even when a "
-                         'word like "shields" or "power" appears.  e.g. "what is the guardian MX '
-                         'armor", "how fast is a gladius", "cutlass black shields", "300i cargo"')
-        lines.append('- chat: not a ship command or ship question; general conversation')
-        lines += ["", "Examples:", *_FORMAT_EXAMPLES]
-        if knowledge_enabled:
-            lines.append(
-                'Input: "cutlass black shields"\n'
-                'Output: {"intent":"ship_info","confirm_required":false,"response_text":""}')
+        lines.extend(knowledge_intents or [])
+        lines.append('- chat: not a ship command or knowledge question; general conversation')
+        lines += ["", "Examples:", *_FORMAT_EXAMPLES, *(knowledge_examples or [])]
         return "\n".join(lines)

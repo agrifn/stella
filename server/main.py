@@ -51,7 +51,9 @@ async def lifespan(app: FastAPI):
     app.state.llm = LLMHandler(
         cfg.llm,
         system_prompt_provider=lambda: app.state.prompt_builder.build(
-            app.state.registry, app.state.knowledge.enabled),
+            app.state.registry,
+            app.state.knowledge.intent_lines(),
+            app.state.knowledge.examples()),
     )
     app.state.tts = TTSHandler(cfg.tts)
     log.info("STELLA starting: model=%s voice=%s tts_ready=%s commands=%d knowledge=%s",
@@ -92,9 +94,9 @@ async def command(req: CommandRequest) -> CommandResponse:
         log.exception("LLM parse failed")
         raise HTTPException(status_code=502, detail=f"LLM error: {e}") from e
 
-    # Knowledge path: a ship-info question is answered from real data, not the keybind map.
-    if app.state.knowledge.enabled and result.intent == "ship_info":
-        ans = await app.state.knowledge.answer(req.text, llm)
+    # Knowledge path: a knowledge question is answered from real data, not the keybind map.
+    if result.intent in app.state.knowledge.intents:
+        ans = await app.state.knowledge.answer(result.intent, req.text, llm)
         if ans:
             result.response_text = ans
 
