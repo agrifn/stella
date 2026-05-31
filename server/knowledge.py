@@ -72,11 +72,11 @@ _BUY_SYSTEM = (
 
 _BLUEPRINT_SYSTEM = (
     "You are STELLA, a Star Citizen ship AI. The pilot is asking about CRAFTING an item. Using "
-    "ONLY the JSON blueprint data (what it makes, craft time, ingredients with quantities, and "
-    "whether it's unlocked by default or via missions), answer concisely and spoken, 1-2 short "
-    "sentences: name the key ingredients and the craft time. If available_by_default is false and "
-    "unlocking_missions is above zero, note the recipe must be unlocked via a mission. Do not "
-    "invent ingredients or numbers."
+    "ONLY the JSON blueprint data (what it makes, craft time, the ingredients with quantities, and "
+    "an 'unlock' note), answer concisely and spoken, in 1-2 short natural sentences: name the key "
+    "ingredients and the craft time, and if the 'unlock' note says so, mention it must be unlocked "
+    "via a mission. Speak naturally - never quote raw field names like 'unlock' or "
+    "'unlocking_missions'. Do not invent ingredients or numbers."
 )
 
 
@@ -169,11 +169,14 @@ def _trim_blueprint(bp: dict) -> dict:
         else:
             qty = None
         ings.append({"name": i.get("name"), "qty": qty, "kind": i.get("kind")})
+    default = bp.get("is_available_by_default")
+    missions = bp.get("unlocking_missions_count") or 0
+    unlock = ("available by default" if default
+              else "must be unlocked by completing a mission" if missions else "unknown")
     return {
-        "name": bp.get("output_name"), "makes_class": bp.get("output_class"),
+        "name": bp.get("output_name"), "makes": bp.get("output_class"),
         "craft_time": bp.get("craft_time_label"),
-        "available_by_default": bp.get("is_available_by_default"),
-        "unlocking_missions": bp.get("unlocking_missions_count"),
+        "unlock": unlock,
         "ingredients": ings,
     }
 
