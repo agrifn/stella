@@ -54,6 +54,18 @@ class ChatInjector:
         # Always settle before typing: typing the instant PTT is released drops the
         # first character (the input field / key-up is still being processed).
         time.sleep(self.open_delay)
+        # The PTT key is Right Ctrl - if it (or any modifier) is still seen as held,
+        # the first character is swallowed as a Ctrl/Alt/Shift shortcut. Force every
+        # modifier up, then send a sacrificial key that absorbs the still-unreliable
+        # first SendInput, so the real text always lands intact.
+        for mod in ("ctrl", "ctrlleft", "ctrlright", "shift", "shiftleft",
+                    "shiftright", "alt", "altleft", "altright"):
+            try:
+                pdi.keyUp(mod)
+            except Exception:  # noqa: BLE001 - some names vary by backend version
+                pass
+        time.sleep(0.05)
+        pdi.press("backspace")  # harmless on an empty field; sacrifices the dropped 1st keystroke
         # typewrite sends each character; pydirectinput handles shift for uppercase.
         pdi.typewrite(text, interval=0.01)
         if self.send_key:

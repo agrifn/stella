@@ -13,6 +13,7 @@ import logging
 import os
 import shlex
 import wave
+from collections import OrderedDict
 from pathlib import Path
 from typing import Optional
 
@@ -36,11 +37,17 @@ def _voice_url(voice: str, suffix: str) -> str:
 
 
 class TTSHandler:
+    # Synthesis is the slow part of a spoken reply (neural TTS ~1s+). The LLM runs
+    # at temperature 0, so a given command yields the SAME ack text every time -
+    # caching by text makes repeated acks instant (no re-synthesis round trip).
+    _CACHE_MAX = 128
+
     def __init__(self, cfg: TTSConfig):
         self._cfg = cfg
         self._dir = cfg.voices_dir
         self._active_file = self._dir / "active.txt"
         self._voice = self._load_active() or cfg.voice
+        self._cache: "OrderedDict[tuple, bytes]" = OrderedDict()
 
     # -- active voice persistence ----------------------------------------
     def _load_active(self) -> Optional[str]:
@@ -123,7 +130,22 @@ class TTSHandler:
     async def synthesize(self, text: str) -> Optional[bytes]:
         if not self.ready or not text.strip():
             return None
-        if os.environ.get("STELLA_TTS_ENGINE", "piper") == "chatterbox":
+        engine = os.environ.get("STELLA_TTS_ENGINE", "piper")
+        key = (engine, self._voice, text.strip())
+        cached = self._cache.get(key)
+        if cached is not None:
+            self._cache.move_to_end(key)  # LRU touch
+            return cached
+        wav = await self._synthesize(engine, text)
+        if wav:
+            self._cache[key] = wav
+            self._cache.move_to_end(key)
+            while len(self._cache) > self._CACHE_MAX:
+                self._cache.popitem(last=False)  # evict least-recently-used
+        return wav
+
+    async def _synthesize(self, engine: str, text: str) -> Optional[bytes]:
+        if engine == "chatterbox":
             url = os.environ.get("STELLA_CHATTERBOX_URL", "http://host.docker.internal:8123")
             async with httpx.AsyncClient(timeout=60.0) as client:
                 r = await client.post(f"{url}/synthesize", json={"text": text})
