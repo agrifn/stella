@@ -72,6 +72,40 @@ docker compose restart stella-api          # after editing server code/config
 docker compose exec ollama ollama ps       # confirm the model is resident on GPU
 ```
 
+## Security
+
+The API has no auth by default, which is fine for the intended single-PC loopback
+setup. Two things to know:
+
+- **Port exposure.** `stella-api` publishes `:8420` and the container listens on
+  `0.0.0.0` (WSL2's NAT forward generally requires this so the Windows host can reach
+  it via `localhost`). On a shared or untrusted network, block inbound `8420` from
+  non-loopback addresses in the Windows firewall, or use WSL **mirrored** networking
+  so you can bind `127.0.0.1`.
+- **Optional shared secret.** Set `STELLA_API_TOKEN` in `.env` (server) and the same
+  value in the client (`client.api_token` in `config/settings.json`, or the
+  `STELLA_API_TOKEN` env var). When set, every route except `/health` requires
+  `Authorization: Bearer <token>`; the client sends it automatically. Unset (default)
+  leaves the API open for local use.
+
+## TTS engine
+
+Default is **piper** (self-contained in the image; the entrypoint downloads a voice).
+To use a host-side **Chatterbox** service (for a custom voice), set `STELLA_TTS_ENGINE=chatterbox`
+and `STELLA_CHATTERBOX_URL` in `.env`, and run that service yourself on the host.
+`GET /health` reports `tts_ready: false` if the selected engine cannot actually
+synthesize (e.g. chatterbox selected but not running).
+
+## Testing
+
+Pure-logic unit tests (no CUDA / PyQt / pydirectinput needed) live in `tests/`:
+```bash
+pip install -r requirements-dev.txt
+pytest
+```
+They cover the confirmation gate, keybind parsing, knowledge routing, the macro
+parser, JSON extraction, and the command registry.
+
 ## Notes / gotchas
 
 - **Run the overlay as Administrator** or keystrokes won't reach SC. `start_stella.bat`
