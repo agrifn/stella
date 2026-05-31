@@ -1,91 +1,88 @@
-# Setup and Operations
+# Setup
 
-## Server facts (as actually deployed)
+STELLA runs entirely on one Windows gaming PC: a native Windows client plus a Dockerized
+backend inside WSL2. (Earlier builds used a separate Proxmox/LXC server - that is no
+longer used; everything is in the Docker containers now.)
 
-- Proxmox host `pve`: Tailscale `100.124.47.47`, LAN reachable, NVIDIA driver 550.135 on host.
-  (Note: the original spec listed `100.71.47.119` for pve. That address is a different
-  machine. The real pve is `100.124.47.47`.)
-- GPU: Quadro P2200, 5 GB, driver 550.135, CUDA 12.4. Uses the shared host `nvidia`
-  kernel driver (not vfio), so LXCs can use it directly via device bind mounts.
-- STELLA runs in LXC `114` named `stella` on the **management VLAN (VLAN 10)**, static IP
-  `10.10.10.114/24`, gateway `10.10.10.1`. Reachable from the desktop over the Tailscale
-  subnet router (which advertises `10.10.10.0/24`), ~30 ms.
-  Host network is VLAN-aware (`vmbr0`, `bridge-vids 2-4094`); the mgmt interface is
-  `vmbr0.10` at `10.10.10.5`. The other LXCs sit untagged on `192.168.1.0/24`.
+## Prerequisites
 
-## LXC 114 'stella' provisioning (already done)
+- Windows 11 with an NVIDIA GPU and a current driver.
+- **WSL2** with an Ubuntu distro, **systemd enabled** (`/etc/wsl.conf` -> `[boot]
+  systemd=true`).
+- **Docker Engine + Docker Compose** inside the WSL2 distro (Docker Desktop also works).
+  Confirm GPU access:
+  ```bash
+  docker run --rm --gpus all ubuntu nvidia-smi
+  ```
+  If that fails, install the **nvidia-container-toolkit** in WSL2 and
+  `nvidia-ctk runtime configure --runtime=docker && systemctl restart docker`.
+- **Python 3.12** on Windows (for the client venv).
 
-Unprivileged Debian 12 LXC, 16 cores, 8 GB RAM, 30 GB rootfs on `llamazfs`,
-`features: nesting=1,keyctl=1`. GPU passthrough lines appended to
-`/etc/pve/lxc/114.conf` (copied from the existing docker LXC 111):
+## Backend (Docker, in WSL2)
 
+From the repo:
+```bash
+cp .env.example .env                 # default = local Ollama
+docker compose up -d --build
+docker compose exec ollama ollama pull llama3.2:3b
 ```
-lxc.cgroup2.devices.allow: c 195:* rwm   # nvidia, nvidia-modeset, nvidiactl
-lxc.cgroup2.devices.allow: c 236:* rwm   # nvidia-caps
-lxc.cgroup2.devices.allow: c 509:* rwm   # nvidia-uvm
-lxc.mount.entry: /dev/nvidia0 dev/nvidia0 none bind,optional,create=file
-lxc.mount.entry: /dev/nvidiactl dev/nvidiactl none bind,optional,create=file
-lxc.mount.entry: /dev/nvidia-modeset dev/nvidia-modeset none bind,optional,create=file
-lxc.mount.entry: /dev/nvidia-uvm dev/nvidia-uvm none bind,optional,create=file
-lxc.mount.entry: /dev/nvidia-uvm-tools dev/nvidia-uvm-tools none bind,optional,create=file
-lxc.mount.entry: /dev/nvidia-caps/nvidia-cap1 dev/nvidia-caps/nvidia-cap1 none bind,optional,create=file
-lxc.mount.entry: /dev/nvidia-caps/nvidia-cap2 dev/nvidia-caps/nvidia-cap2 none bind,optional,create=file
-```
+This brings up two containers:
+- `stella-ollama` - the LLM on the GPU (`--gpus all`), internal only.
+- `stella-api` - FastAPI intent API + Piper TTS, published on `:8420`. On first run its
+  entrypoint downloads the default voice into a persistent `voices` volume.
 
-Inside the LXC:
-- NVIDIA userland 550.135 installed from the `.run` with `--no-kernel-module --silent`
-  (must match the host kernel module version exactly). Verify: `nvidia-smi`.
-- Docker CE + `nvidia-container-toolkit`, configured with
-  `nvidia-container-cli.no-cgroups=true` (required for unprivileged LXC).
-  Verify: `docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi`.
-
-## Ollama
-
-Runs as a Docker container with GPU:
-
-```
-docker run -d --gpus all -v ollama:/root/.ollama -p 11434:11434 \
-  --restart unless-stopped --name ollama ollama/ollama
-docker exec ollama ollama pull llama3.2:3b
+Check it:
+```bash
+curl http://localhost:8420/health
+curl -X POST http://localhost:8420/command -H "Content-Type: application/json" \
+     -d '{"text":"turn on the lights","speak":false}'
 ```
 
-Check offload: `docker exec ollama ollama ps` should show `100% GPU`.
-
-## STELLA service
-
-- Code at `/opt/stella`, venv at `/opt/stella/.venv`.
-- Piper binary at `/opt/piper/piper`, voice at `/opt/stella/server/voices/en_US-lessac-medium.onnx`.
-- systemd unit `stella.service` runs `uvicorn server.main:app --host 0.0.0.0 --port 8420`.
-
-Operate:
+### Using an external LLM instead of local Ollama
+Edit `.env` and `docker compose up -d` again:
 ```
-systemctl status stella          # state
-journalctl -u stella -f          # logs
-systemctl restart stella         # after editing code/config
+STELLA_LLM_PROVIDER=openai          # or: anthropic
+STELLA_LLM_MODEL=gpt-4o-mini
+STELLA_LLM_BASE_URL=https://api.openai.com/v1   # OpenRouter/Groq/LM Studio also work
+STELLA_LLM_API_KEY=sk-...
 ```
 
-Deploy updated code from the desktop repo:
+## Client (Windows)
+
+```bat
+py -3.12 -m venv client\.venv
+client\.venv\Scripts\pip install -r client\requirements.txt
 ```
-tar czf - server config | ssh llama@100.124.47.47 \
-  "sudo pct exec 114 -- tar xzf - --no-same-owner -C /opt/stella"
-ssh llama@100.124.47.47 "sudo pct exec 114 -- systemctl restart stella"
+The client reaches the backend at `http://127.0.0.1:8420` (use `127.0.0.1`, not
+`localhost` - `localhost` resolves to IPv6 first and WSL2's forward ignores it, causing
+a ~21s stall per connection).
+
+Run it:
+- `start_manager.bat` - the Command & Voice Manager GUI (no admin needed). Use its
+  "Launch STELLA" button to start the overlay.
+- `start_stella.bat` - the overlay directly. It self-elevates via UAC, which is required
+  so keystrokes reach Star Citizen (SC + EAC run elevated).
+
+## Operating the backend
+
+```bash
+docker compose ps
+docker compose logs -f stella-api
+docker compose restart stella-api          # after editing server code/config
+docker compose exec ollama ollama ps       # confirm the model is resident on GPU
 ```
 
-## Test from the desktop
+## Notes / gotchas
 
-```
-curl http://10.10.10.114:8420/health
-curl -X POST http://10.10.10.114:8420/command \
-  -H "Content-Type: application/json" -d "{\"text\":\"turn the lights on\"}"
-```
-
-## Customizing keybinds
-
-Edit `config/keybinds.json` (intent -> key, plus `confirm_required` / `hold`), redeploy,
-restart. Keys use pydirectinput names: `period`, `capslock`, `tab`, combos like `alt+y`.
-
-## Temporary access note
-
-A `/etc/sudoers.d/llama-nopasswd` rule was added on pve to allow hands-free provisioning.
-Remove it when you no longer want passwordless sudo:
-`sudo rm /etc/sudoers.d/llama-nopasswd`
+- **Run the overlay as Administrator** or keystrokes won't reach SC. `start_stella.bat`
+  handles this; the overlay also warns if it's not elevated.
+- **Overlay over the game:** use borderless/windowed; an exclusive-fullscreen game may
+  hide the overlay.
+- **Audio device:** if you can't hear STELLA, the default output may be the wrong device
+  (e.g. an HDMI/TV sink). `python -m client.audiotest --list` then set `output_device` in
+  `config/settings.json`.
+- **Whisper on Windows** needs the cuBLAS/cuDNN DLLs from the `nvidia-*-cu12` wheels on
+  PATH; `client/cuda_paths.py` handles this. On an 8GB GPU drop `whisper_model` to
+  `small`/`int8` in settings.
+- **num_ctx must be consistent** on every Ollama call or the model reloads (multi-second
+  stalls); the server pins it.

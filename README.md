@@ -1,110 +1,99 @@
-# STELLA - Star Citizen AI Copilot
+# STELLA - Star Citizen voice copilot
 
-Local AI copilot for Star Citizen. Voice in, ship actions and spoken AI confirmation out.
-Split across a gaming desktop (STT, input, overlay) and a Proxmox server (LLM + TTS).
+STELLA is a local, voice-controlled AI ship assistant for Star Citizen. You hold a
+push-to-talk key and speak; STELLA transcribes it, decides the intent, presses the
+matching ship keybind in-game, and speaks a short confirmation - in about a second.
 
-Status: Phases 1-3 complete and validated. The overlay GUI is Phase 4.
-- Phase 1: server (LLM intent + Piper TTS)
-- Phase 2: desktop STT (faster-whisper, PTT)
-- Phase 3: keybind execution (pydirectinput), voice-confirm gate, and a command-manager GUI
-  with live add/edit/delete backed by the server. Live in-game/EAC test pending.
+Everything runs on the gaming PC. Nothing is sent to the cloud unless you opt into an
+external LLM provider.
 
 ## Architecture
 
 ```
-Desktop (RTX 5090, Windows)                Server LXC 'stella' (Proxmox, Quadro P2200)
-  PTT mic capture                            Ollama (Docker, --gpus all) : llama3.2:3b
-  faster-whisper STT            HTTP         FastAPI :8420
-  mode switch (CHAT/COMMAND)  -------->        /command  intent + keybind + TTS audio
-  pydirectinput keybinds                       /health
-  PyQt6 overlay                              Piper TTS (CPU) en_US-lessac-medium
-  audio playback              <--------
+ONE machine (Windows + WSL2, RTX 5090)
+
+  Native Windows client                     Docker backend  (WSL2, "stella-stack")
+  --------------------                      --------------------------------------
+  faster-whisper STT (CUDA)                   stella-ollama   ollama/ollama --gpus all
+  push-to-talk capture          HTTP            -> llama3.2:3b (100% GPU)
+  PyQt6 overlay HUD          127.0.0.1:8420    stella-api      FastAPI + Piper TTS
+  pydirectinput keybinds  <-------------->       /command  /speak  /commands  /voices
+  CHAT-mode text injection                       /health
+  audio playback
 ```
 
-## How /command works
+- The client is **native Windows** (it needs the mic, global hotkeys, keystroke
+  injection into the game, audio out, and an overlay - none of which work from a
+  container).
+- The brain (LLM + TTS) is a **two-container Docker stack** in WSL2 with GPU access.
+- They talk over `127.0.0.1:8420` (WSL2 forwards the port to Windows).
 
-1. Desktop sends transcribed text: `POST /command {"text": "put all power to shields"}`
-2. `llm_handler` asks Ollama (llama3.2:3b) to classify the text into an intent, using a
-   strict JSON schema (Ollama structured outputs) so the model cannot ramble.
-3. `keybind_resolver` maps the intent to a real key via `config/keybinds.json`.
-   The LLM never chooses keybinds, so it cannot hallucinate one. The server is also
-   authoritative for `confirm_required` (eject, self_destruct).
-4. `tts_handler` runs Piper on the spoken `response_text` and returns base64 WAV.
-5. Response:
-   ```json
-   {"intent":"shields_max","keybind":"0","confirm_required":false,
-    "response_text":"Routing all power to shields.","audio":"<base64 wav>","audio_format":"wav"}
-   ```
+## Features
 
-## Design notes
+- **Speech to intent:** faster-whisper (`large-v3-turbo`) -> Ollama classifies into a
+  ship command using a strict JSON schema (no rambling).
+- **Server-resolved keybinds:** the LLM only picks an intent; the server maps it to a
+  key via `config/keybinds.json`, so the model can never hallucinate a keybind. The
+  server is also authoritative for the `confirm_required` safety flag.
+- **Keystroke execution:** pydirectinput (SendInput scancodes - the VoiceAttack-style
+  approach that works under EAC). Supports combos, left/right modifiers, double-taps,
+  and held keys.
+- **Voice-confirm gate:** dangerous commands (`eject`, `self_destruct`) require a spoken
+  "yes" before they fire.
+- **CHAT mode:** speak and it types the text wherever your cursor is.
+- **Overlay HUD:** frameless, click-through, always-on-top - mode, listening state,
+  last speech, last reply.
+- **Command & Voice manager (GUI):** add/edit/delete commands at runtime (updates the
+  keybind map AND the LLM prompt together), switch/download Piper voices, and a
+  "Launch STELLA" button.
+- **Pluggable LLM:** local Ollama (default), any OpenAI-compatible endpoint, or Anthropic
+  - selected in `.env`.
 
-- LLM classifies intent only; keybinds + safety flags live in `config/keybinds.json`
-  (single source of truth, user editable, SOLID).
-- Model is pinned in VRAM via `keep_alive` to avoid cold-load latency.
-- Handlers (LLM, keybind, TTS) are constructed once and injected into the route.
-- TTS is non-critical: if Piper fails the command still returns, just without audio.
+Measured: ~1.0s from end of speech to in-game action (STT ~0.3s + intent ~0.7s); the
+spoken reply follows in the background so it never delays the action.
 
-## Measured performance (Phase 1, P2200)
+## Quick start
 
-| Stage | Result |
-|-------|--------|
-| qwen3:4b on GPU | 100% GPU, 3.1 GB VRAM, 30 tok/s (rejected: misclassified intents) |
-| llama3.2:3b (chosen) | correct intents, ~1.5 s warm |
-| End-to-end /command (LLM + TTS + LAN) | 1.7 - 2.3 s |
-| TTS audio | 22050 Hz mono 16-bit WAV |
+Prereqs: Windows 11, WSL2 (Ubuntu, systemd on), Docker + nvidia-container-toolkit inside
+WSL2, an NVIDIA GPU, and Python 3.12. See [docs/setup.md](docs/setup.md) for details.
 
-## Desktop client (Phase 2)
-
-Runs on the gaming PC `llamasys` (Windows, RTX 5090 32GB, Blackwell). faster-whisper
-`large-v3-turbo`/float16 on CUDA (~1.5GB VRAM, transient; 0.07-0.3s per short clip),
-push-to-talk capture, HTTP to the server, TTS playback. Python 3.12 venv.
-On an 8GB card, drop to `small`/int8 in settings.json.
-
+**Backend** (in WSL2):
+```bash
+cp .env.example .env            # default = local Ollama
+docker compose up -d --build
+docker compose exec ollama ollama pull llama3.2:3b   # first time
 ```
-cd sc-ai-copilot
-python -m venv client\.venv
+
+**Client** (Windows, in this folder):
+```bat
+py -3.12 -m venv client\.venv
 client\.venv\Scripts\pip install -r client\requirements.txt
-
-# Headless test (no mic): transcribe sample phrases through the server
-client\.venv\Scripts\python -m client.test_loop --file --play
-
-# Live: hold PTT (Scroll Lock) to talk, F8 toggles CHAT/COMMAND
-client\.venv\Scripts\python -m client.test_loop
 ```
+Then launch (both .bat files self-/non-elevate as needed):
+- `start_manager.bat`  -> the Command & Voice Manager GUI (has a "Launch STELLA" button)
+- `start_stella.bat`   -> the overlay directly (runs as Administrator so keystrokes reach
+  the game; SC + EAC run elevated)
 
-Windows note: faster-whisper needs the cuBLAS/cuDNN DLLs from the nvidia-*-cu12 wheels
-on PATH; `client/cuda_paths.py` handles this automatically. If the PTT key does not
-register while Star Citizen is focused, run the client as administrator.
+Hold the PTT key (Right Ctrl) to talk; `Ctrl+Alt+M` toggles CHAT/COMMAND. Run Star Citizen
+in borderless/windowed so the overlay shows.
 
-## Managing commands
+## Configuration
 
-Commands live in `config/keybinds.json` (server side) and are managed at runtime via
-the server's CRUD API or the GUI. Adding a command updates BOTH the keybind mapping and
-the LLM's prompt, so a new command is recognized immediately.
-
-- API: `GET/POST /commands`, `PUT/DELETE /commands/{intent}`
-- GUI (run on llamasys): `client\.venv\Scripts\python -m client.command_manager`
-  Table of commands; Add/Edit/Delete; "Capture key" records a keypress as the bind;
-  "Test phrase" shows how the AI classifies any phrase.
-
-## Keybind execution & safety
-
-The client presses the server-resolved key into Star Citizen via pydirectinput
-(SendInput virtual keystrokes - the VoiceAttack-style approach compatible with EAC).
-Dangerous commands (`eject`, `self_destruct`) are flagged `confirm_required`; in live
-mode STELLA speaks a prompt and waits for a spoken "yes" before executing. Run the loop
-with `--dry-run` to log keys without pressing them.
+- `config/keybinds.json` - the command set (intent -> key, hold, confirm, example
+  phrases). Curated for SC Alpha 4.0. Edit by hand or via the GUI.
+- `config/settings.json` - PTT key, mode toggle, Whisper model, audio device, overlay
+  position, chat keys, server URL.
+- `.env` - LLM provider/model/key (see `.env.example`). Never commit it.
 
 ## Layout
 
 ```
-server/   FastAPI app: main, config, models, llm_handler, command_registry,
-          prompt_builder (dynamic prompt), tts_handler
-client/   stt_handler, audio_capture (PTT), command_sender, audio_player,
-          keybind_executor, cuda_paths, config, test_loop (harness),
-          commands_api + command_manager (PyQt6 GUI)
-config/   keybinds.json (intent -> key, source of truth), settings.json
+server/   FastAPI app (main, config, models, command_registry, prompt_builder,
+          llm_handler + llm_providers, tts_handler), Dockerfile, entrypoint.sh
+client/   engine (shared voice loop), app (overlay), overlay, audio_capture (PTT),
+          stt_handler, keybind_executor, chat_injector, command_sender, audio_player,
+          command_manager + commands_api (GUI), cuda_paths, config, test_loop, audiotest
+config/   keybinds.json, settings.json
 docs/     setup.md
+docker-compose.yml   start_stella.bat   start_manager.bat
 ```
-
-See `docs/setup.md` for how the server was provisioned and how to operate it.
