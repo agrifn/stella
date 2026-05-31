@@ -33,5 +33,9 @@ class LLMHandler:
     async def parse_intent(self, text: str) -> IntentResult:
         return await self._provider.parse_intent(self._system_prompt_provider(), text)
 
+    async def generate(self, system_prompt: str, user: str) -> str:
+        """Free-form completion (knowledge answers), bypassing the intent schema."""
+        return await self._provider.generate(system_prompt, user)
+
     async def health(self) -> bool:
         return await self._provider.health()

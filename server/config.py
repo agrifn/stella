@@ -43,6 +43,13 @@ class TTSConfig:
 
 
 @dataclass(frozen=True)
+class KnowledgeConfig:
+    # Optional factual lookups (SC ship stats etc). When disabled, the 'ship_info'
+    # intent is never added to the prompt and no data is fetched - zero overhead.
+    enabled: bool = True
+
+
+@dataclass(frozen=True)
 class ServerConfig:
     host: str = "0.0.0.0"
     port: int = 8420
@@ -50,6 +57,7 @@ class ServerConfig:
     system_prompt_path: Path = PROMPTS_DIR / "stella_system.txt"
     llm: LLMConfig = field(default_factory=LLMConfig)
     tts: TTSConfig = field(default_factory=TTSConfig)
+    knowledge: KnowledgeConfig = field(default_factory=KnowledgeConfig)
 
 
 def _env(name: str, default: str | None) -> str | None:
@@ -87,9 +95,17 @@ def load_config(settings_path: Path | None = None) -> ServerConfig:
         piper_bin=_env("STELLA_PIPER_BIN", tts_defaults.piper_bin),
     )
 
+    know = data.get("knowledge", {})
+    know_enabled = _env("STELLA_KNOWLEDGE_ENABLED", None)
+    knowledge_cfg = KnowledgeConfig(
+        enabled=(know_enabled.lower() in ("1", "true", "yes")) if know_enabled is not None
+        else bool(know.get("enabled", KnowledgeConfig.enabled)),
+    )
+
     return ServerConfig(
         host=_env("STELLA_HOST", srv.get("host", ServerConfig.host)),
         port=int(_env("STELLA_PORT", srv.get("port", ServerConfig.port))),
         llm=llm_cfg,
         tts=tts_cfg,
+        knowledge=knowledge_cfg,
     )

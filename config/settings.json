@@ -20,6 +20,9 @@
     "voice": "en_US-lessac-medium",
     "sample_rate": 22050
   },
+  "knowledge": {
+    "enabled": true
+  },
   "client": {
     "ptt_key": "right ctrl",
     "mode_toggle_key": "ctrl+alt+m",

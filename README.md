@@ -48,6 +48,11 @@ ONE machine (Windows + WSL2, RTX 5090)
   "Launch STELLA" button.
 - **Pluggable LLM:** local Ollama (default), any OpenAI-compatible endpoint, or Anthropic
   - selected in `.env`.
+- **Knowledge lookups (optional):** ask factual ship questions ("what's the Guardian MX
+  armor rating", "how fast is a Gladius", "Freelancer cargo capacity"). STELLA caches a
+  vehicle index from the StarCitizenWiki API, fuzzy-matches the ship from your speech, and
+  answers from real data. Toggle with `knowledge.enabled` in settings; when off it adds
+  zero overhead (the command path is never touched).
 
 Measured: ~1.0s from end of speech to in-game action (STT ~0.3s + intent ~0.7s); the
 spoken reply follows in the background so it never delays the action.

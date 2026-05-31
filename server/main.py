@@ -12,6 +12,7 @@ editing a command immediately changes what the model can recognize.
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import logging
 from contextlib import asynccontextmanager
@@ -20,6 +21,7 @@ from fastapi import FastAPI, HTTPException
 
 from .command_registry import Command, CommandError, CommandRegistry
 from .config import load_config
+from .knowledge import KnowledgeHandler
 from .llm_handler import LLMHandler
 from .models import (
     CommandModel,
@@ -45,14 +47,19 @@ async def lifespan(app: FastAPI):
     app.state.cfg = cfg
     app.state.registry = CommandRegistry(cfg.keybinds_path)
     app.state.prompt_builder = PromptBuilder(cfg.system_prompt_path)
+    app.state.knowledge = KnowledgeHandler(cfg.knowledge.enabled)
     app.state.llm = LLMHandler(
         cfg.llm,
-        system_prompt_provider=lambda: app.state.prompt_builder.build(app.state.registry),
+        system_prompt_provider=lambda: app.state.prompt_builder.build(
+            app.state.registry, app.state.knowledge.enabled),
     )
     app.state.tts = TTSHandler(cfg.tts)
-    log.info("STELLA starting: model=%s voice=%s tts_ready=%s commands=%d",
-             cfg.llm.model, cfg.tts.voice, app.state.tts.ready, len(app.state.registry.intents))
+    log.info("STELLA starting: model=%s voice=%s tts_ready=%s commands=%d knowledge=%s",
+             cfg.llm.model, cfg.tts.voice, app.state.tts.ready,
+             len(app.state.registry.intents), cfg.knowledge.enabled)
     await app.state.llm.warm()
+    # Load the knowledge index in the background so it never delays startup.
+    asyncio.create_task(app.state.knowledge.load())
     yield
     await app.state.llm.aclose()
 
@@ -84,6 +91,12 @@ async def command(req: CommandRequest) -> CommandResponse:
     except Exception as e:  # noqa: BLE001
         log.exception("LLM parse failed")
         raise HTTPException(status_code=502, detail=f"LLM error: {e}") from e
+
+    # Knowledge path: a ship-info question is answered from real data, not the keybind map.
+    if app.state.knowledge.enabled and result.intent == "ship_info":
+        ans = await app.state.knowledge.answer(req.text, llm)
+        if ans:
+            result.response_text = ans
 
     bind = registry.resolve(result.intent)
     # Server is authoritative for keybind/macro and the safety/confirm flag.

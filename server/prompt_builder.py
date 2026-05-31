@@ -27,7 +27,7 @@ class PromptBuilder:
     def __init__(self, preamble_path: Path):
         self._preamble = preamble_path.read_text(encoding="utf-8").rstrip()
 
-    def build(self, registry: CommandRegistry) -> str:
+    def build(self, registry: CommandRegistry, knowledge_enabled: bool = False) -> str:
         lines = [self._preamble, "", "Valid intents (intent: description; example phrases):"]
         for cmd in registry.list():
             desc = cmd.description or cmd.intent
@@ -36,6 +36,11 @@ class PromptBuilder:
             if cmd.examples:
                 hints = "  e.g. " + ", ".join(f'"{p}"' for p in cmd.examples[:4])
             lines.append(f"- {cmd.intent}: {desc}{danger}{hints}")
-        lines.append('- chat: not a ship command, or a question/conversation')
+        if knowledge_enabled:
+            lines.append('- ship_info: the pilot asks a factual question about a SHIP/vehicle '
+                         "(armor, shields, hull, speed, cargo, crew, mass, manufacturer)  "
+                         'e.g. "what is the guardian MX armor", "how fast is a gladius", '
+                         '"cargo capacity of a freelancer"')
+        lines.append('- chat: not a ship command or ship question; general conversation')
         lines += ["", "Examples:", *_FORMAT_EXAMPLES]
         return "\n".join(lines)

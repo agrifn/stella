@@ -64,6 +64,10 @@ class IntentProvider(abc.ABC):
     async def warm(self) -> None:  # optional; default no-op
         return None
 
+    async def generate(self, system_prompt: str, user: str) -> str:
+        """Free-form completion (used by the knowledge module). Default unsupported."""
+        raise NotImplementedError
+
     @abc.abstractmethod
     async def health(self) -> bool: ...
 
@@ -110,6 +114,20 @@ class OllamaProvider(IntentProvider):
         r.raise_for_status()
         return _result_from_obj(_extract_json(r.json()["message"]["content"]))
 
+    async def generate(self, system_prompt: str, user: str) -> str:
+        r = await self._client.post("/api/chat", json={
+            "model": self._cfg.model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user},
+            ],
+            "stream": False,
+            "keep_alive": self._cfg.keep_alive,
+            "options": self._options(num_predict=160),
+        })
+        r.raise_for_status()
+        return r.json()["message"]["content"]
+
     async def health(self) -> bool:
         try:
             return (await self._client.get("/api/tags")).status_code == 200
@@ -143,6 +161,19 @@ class OpenAIProvider(IntentProvider):
         r.raise_for_status()
         content = r.json()["choices"][0]["message"]["content"]
         return _result_from_obj(_extract_json(content))
+
+    async def generate(self, system_prompt: str, user: str) -> str:
+        r = await self._client.post("/chat/completions", json={
+            "model": self._cfg.model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user},
+            ],
+            "temperature": self._cfg.temperature,
+            "max_tokens": 160,
+        })
+        r.raise_for_status()
+        return r.json()["choices"][0]["message"]["content"]
 
     async def health(self) -> bool:
         try:
@@ -191,6 +222,18 @@ class AnthropicProvider(IntentProvider):
             if block.get("type") == "tool_use" and block.get("name") == "set_intent":
                 return _result_from_obj(block["input"])
         raise RuntimeError("Anthropic did not return the expected tool call")
+
+    async def generate(self, system_prompt: str, user: str) -> str:
+        r = await self._client.post("/v1/messages", json={
+            "model": self._cfg.model,
+            "max_tokens": 160,
+            "temperature": self._cfg.temperature,
+            "system": system_prompt,
+            "messages": [{"role": "user", "content": user}],
+        })
+        r.raise_for_status()
+        return "".join(b.get("text", "") for b in r.json().get("content", [])
+                       if b.get("type") == "text")
 
     async def health(self) -> bool:
         # No unauthenticated health route; treat a configured key as healthy.
