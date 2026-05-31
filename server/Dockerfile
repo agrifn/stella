@@ -2,15 +2,12 @@
 # Build from the repo root:  docker build -f server/Dockerfile -t stella-api .
 FROM python:3.12-slim
 
-# Piper needs libgomp (onnxruntime); curl for fetching piper + the voice.
+# piper-tts (the pip package, invoked as `python3 -m piper`) needs libgomp for its
+# onnxruntime backend; curl is used by entrypoint.sh to fetch the default voice.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         curl ca-certificates libgomp1 \
     && rm -rf /var/lib/apt/lists/*
-
-# Piper TTS binary (bundles its own libs) + the default voice model.
-RUN curl -fsSL -o /tmp/piper.tar.gz \
-        https://github.com/rhasspy/piper/releases/download/2023.11.14-2/piper_linux_x86_64.tar.gz \
-    && tar -xzf /tmp/piper.tar.gz -C /opt && rm /tmp/piper.tar.gz
+# TTS engine = the piper-tts pip package (see requirements.txt + STELLA_PIPER_BIN).
 # Voices live in a mounted volume; the entrypoint downloads the default at first run.
 
 WORKDIR /app

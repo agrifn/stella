@@ -11,6 +11,7 @@ import asyncio
 import io
 import logging
 import os
+import re
 import shlex
 import wave
 from collections import OrderedDict
@@ -24,6 +25,16 @@ from .config import TTSConfig
 log = logging.getLogger("stella.tts")
 
 _HF_BASE = "https://huggingface.co/rhasspy/piper-voices/resolve/main"
+
+# Strict Piper voice name, e.g. en_US-lessac-medium. Validated BEFORE any URL build
+# or file write so a name like '../../x' can never traverse the voices dir or the
+# upstream path (the /voices/download endpoint is unauthenticated).
+_VOICE_RE = re.compile(r"^[a-z]{2}_[A-Z]{2}-[a-z0-9_]+-(x_low|low|medium|high)$")
+
+
+def _validate_voice_name(voice: str) -> None:
+    if not _VOICE_RE.match(voice or ""):
+        raise ValueError(f"invalid voice name: {voice!r}")
 
 
 def _voice_url(voice: str, suffix: str) -> str:
@@ -48,6 +59,14 @@ class TTSHandler:
         self._active_file = self._dir / "active.txt"
         self._voice = self._load_active() or cfg.voice
         self._cache: "OrderedDict[tuple, bytes]" = OrderedDict()
+        self._engine = os.environ.get("STELLA_TTS_ENGINE", "piper")
+        self._chatterbox_url = os.environ.get(
+            "STELLA_CHATTERBOX_URL", "http://host.docker.internal:8123")
+        self._ready: Optional[bool] = None  # cached readiness (probed for chatterbox)
+
+    @property
+    def engine(self) -> str:
+        return self._engine
 
     # -- active voice persistence ----------------------------------------
     def _load_active(self) -> Optional[str]:
@@ -74,11 +93,35 @@ class TTSHandler:
 
     @property
     def ready(self) -> bool:
+        """Best-effort cached readiness. For chatterbox this reflects the last probe
+        (call check_ready() to refresh); for piper it checks the voice model file."""
         if not self._cfg.enabled:
             return False
-        if os.environ.get("STELLA_TTS_ENGINE", "piper") == "chatterbox":
-            return True
+        if self._engine == "chatterbox":
+            return bool(self._ready)
         return self._model_path().exists()
+
+    async def check_ready(self) -> bool:
+        """Probe whether synthesis can ACTUALLY succeed, and cache it. For chatterbox
+        this pings the host service so /health never falsely reports ready when no
+        service is listening; for piper it checks the voice file exists."""
+        if not self._cfg.enabled:
+            self._ready = False
+            return False
+        if self._engine != "chatterbox":
+            self._ready = self._model_path().exists()
+            return self._ready
+        try:
+            async with httpx.AsyncClient(timeout=3.0) as client:
+                await client.get(self._chatterbox_url)  # any HTTP response = reachable
+            ok = True
+        except httpx.HTTPError:
+            ok = False
+        if ok != self._ready:
+            log.warning("chatterbox TTS at %s: %s", self._chatterbox_url,
+                        "reachable" if ok else "UNREACHABLE - no audio will be produced")
+        self._ready = ok
+        return ok
 
     # -- voice catalogue --------------------------------------------------
     def available_voices(self) -> list[str]:
@@ -87,6 +130,7 @@ class TTSHandler:
         return sorted(p.stem for p in self._dir.glob("*.onnx"))
 
     def set_voice(self, voice: str) -> None:
+        _validate_voice_name(voice)
         if not (self._dir / f"{voice}.onnx").exists():
             raise FileNotFoundError(f"voice not installed: {voice}")
         self._voice = voice
@@ -99,6 +143,7 @@ class TTSHandler:
         Both files are written to temp paths and only committed once BOTH succeed,
         so a mid-download failure never leaves a half-installed (unusable) voice.
         """
+        _validate_voice_name(voice)
         self._dir.mkdir(parents=True, exist_ok=True)
         tmp: dict[str, Path] = {}
         try:

@@ -42,8 +42,11 @@ services:
       STELLA_LLM_API_KEY: ${STELLA_LLM_API_KEY:-}
       # UEX Corp API token for "where to buy" item/weapon lookups (optional).
       STELLA_UEX_TOKEN: ${STELLA_UEX_TOKEN:-}
-      # TTS engine: "chatterbox" (host service) or "piper" (in-container fallback).
-      STELLA_TTS_ENGINE: ${STELLA_TTS_ENGINE:-chatterbox}
+      # Optional shared secret; when set, every route except /health needs a Bearer token.
+      STELLA_API_TOKEN: ${STELLA_API_TOKEN:-}
+      # TTS engine: default "piper" (self-contained in the image). Set to "chatterbox"
+      # in .env to use a host-side Chatterbox service (e.g. a custom voice) on :8123.
+      STELLA_TTS_ENGINE: ${STELLA_TTS_ENGINE:-piper}
       STELLA_CHATTERBOX_URL: ${STELLA_CHATTERBOX_URL:-http://host.docker.internal:8123}
     ports:
       - "8420:8420"

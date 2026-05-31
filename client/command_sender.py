@@ -22,7 +22,7 @@ class CommandResult:
 
 
 class CommandSender:
-    def __init__(self, server_url: str, timeout: float = 30.0):
+    def __init__(self, server_url: str, token: str | None = None, timeout: float = 30.0):
         self._url = server_url.rstrip("/")
         self._timeout = timeout
         self._session = requests.Session()
@@ -30,6 +30,8 @@ class CommandSender:
         # go stale and then hang/error. A fresh connection per request to 127.0.0.1
         # is ~1ms and avoids that entirely.
         self._session.headers["Connection"] = "close"
+        if token:  # optional shared secret; server requires it only when configured
+            self._session.headers["Authorization"] = f"Bearer {token}"
 
     def send(self, text: str, speak: bool = True) -> CommandResult:
         r = self._session.post(

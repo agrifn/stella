@@ -11,7 +11,7 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
-# Repo layout: this file is sc-ai-copilot/server/config.py
+# Repo layout: this file is server/config.py (repo root is the parent of server/).
 SERVER_DIR = Path(__file__).resolve().parent
 REPO_ROOT = SERVER_DIR.parent
 CONFIG_DIR = REPO_ROOT / "config"
@@ -25,6 +25,8 @@ class LLMConfig:
     model: str = "llama3.2:3b"
     temperature: float = 0.0
     num_ctx: int = 2048
+    # config/settings.json sets this to "24h" on purpose: keeping the model resident
+    # avoids multi-second cold reloads. This 30m fallback only applies with no settings.
     keep_alive: str = "30m"
     # For external providers (openai-compatible / anthropic):
     base_url: str | None = None       # override endpoint (OpenRouter, Groq, LM Studio...)
@@ -64,6 +66,9 @@ class ServerConfig:
     llm: LLMConfig = field(default_factory=LLMConfig)
     tts: TTSConfig = field(default_factory=TTSConfig)
     knowledge: KnowledgeConfig = field(default_factory=KnowledgeConfig)
+    # Optional shared secret (STELLA_API_TOKEN). When set, every route except
+    # /health requires 'Authorization: Bearer <token>'. Unset = open (local use).
+    api_token: str | None = None
 
 
 def _env(name: str, default: str | None) -> str | None:
@@ -116,4 +121,5 @@ def load_config(settings_path: Path | None = None) -> ServerConfig:
         llm=llm_cfg,
         tts=tts_cfg,
         knowledge=knowledge_cfg,
+        api_token=_env("STELLA_API_TOKEN", srv.get("api_token")),
     )

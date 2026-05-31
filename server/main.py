@@ -17,7 +17,8 @@ import base64
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 
 from .command_registry import Command, CommandError, CommandRegistry
 from .config import load_config
@@ -56,10 +57,11 @@ async def lifespan(app: FastAPI):
             app.state.knowledge.examples()),
     )
     app.state.tts = TTSHandler(cfg.tts)
-    log.info("STELLA starting: model=%s voice=%s tts_ready=%s commands=%d knowledge=%s uex=%s",
-             cfg.llm.model, cfg.tts.voice, app.state.tts.ready,
+    tts_ready = await app.state.tts.check_ready()  # probes the chatterbox host service if selected
+    log.info("STELLA starting: model=%s engine=%s tts_ready=%s commands=%d knowledge=%s uex=%s auth=%s",
+             cfg.llm.model, app.state.tts.engine, tts_ready,
              len(app.state.registry.intents), cfg.knowledge.enabled,
-             bool(cfg.knowledge.enabled and cfg.knowledge.uex_token))
+             bool(cfg.knowledge.enabled and cfg.knowledge.uex_token), bool(cfg.api_token))
     await app.state.llm.warm()
     # Load the knowledge index in the background so it never delays startup.
     asyncio.create_task(app.state.knowledge.load())
@@ -67,7 +69,20 @@ async def lifespan(app: FastAPI):
     await app.state.llm.aclose()
 
 
-app = FastAPI(title="STELLA Server", version="0.2.0", lifespan=lifespan)
+def require_auth(request: Request, authorization: str | None = Header(default=None)) -> None:
+    """If STELLA_API_TOKEN is set, require 'Authorization: Bearer <token>' on every
+    route except /health. Unset (the default) leaves the API open for local use."""
+    if request.url.path == "/health":
+        return
+    token = getattr(app.state, "cfg", None) and app.state.cfg.api_token
+    if not token:
+        return
+    if authorization != f"Bearer {token}":
+        raise HTTPException(status_code=401, detail="missing or invalid API token")
+
+
+app = FastAPI(title="STELLA Server", version="0.2.0", lifespan=lifespan,
+              dependencies=[Depends(require_auth)])
 
 
 def _to_model(cmd: Command) -> CommandModel:
@@ -179,7 +194,7 @@ async def list_commands() -> list[CommandModel]:
 @app.post("/commands", response_model=CommandModel, status_code=201)
 async def create_command(cmd: CommandModel) -> CommandModel:
     try:
-        created = app.state.registry.add(Command(
+        created = await run_in_threadpool(app.state.registry.add, Command(
             intent=cmd.intent.strip(),
             key=cmd.key,
             confirm_required=cmd.confirm_required,
@@ -197,7 +212,8 @@ async def create_command(cmd: CommandModel) -> CommandModel:
 @app.put("/commands/{intent}", response_model=CommandModel)
 async def update_command(intent: str, patch: CommandUpdate) -> CommandModel:
     try:
-        updated = app.state.registry.update(intent, **patch.model_dump(exclude_unset=True))
+        updated = await run_in_threadpool(
+            app.state.registry.update, intent, **patch.model_dump(exclude_unset=True))
     except CommandError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
     log.info("command updated: %s", intent)
@@ -207,7 +223,7 @@ async def update_command(intent: str, patch: CommandUpdate) -> CommandModel:
 @app.delete("/commands/{intent}", status_code=204)
 async def delete_command(intent: str) -> None:
     try:
-        app.state.registry.delete(intent)
+        await run_in_threadpool(app.state.registry.delete, intent)
     except CommandError as e:
         code = 409 if "reserved" in str(e) else 404
         raise HTTPException(status_code=code, detail=str(e)) from e
@@ -224,5 +240,5 @@ async def health() -> HealthResponse:
         provider=cfg.llm.provider,
         model=cfg.llm.model,
         llm_reachable=llm_ok,
-        tts_ready=app.state.tts.ready,
+        tts_ready=await app.state.tts.check_ready(),
     )

@@ -182,7 +182,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.api = api
         self.cfg = cfg
-        self.sender = CommandSender(cfg.server_url)
+        self.sender = CommandSender(cfg.server_url, cfg.api_token)
         self.player = AudioPlayer(cfg.output_device)
         self.setWindowTitle("STELLA - Command & Voice Manager")
         self.resize(760, 560)
@@ -399,7 +399,7 @@ class MainWindow(QMainWindow):
 
 def main():
     cfg = load_client_config()
-    api = CommandsAPI(cfg.server_url)
+    api = CommandsAPI(cfg.server_url, cfg.api_token)
     app = QApplication(sys.argv)
     win = MainWindow(api, cfg)
     win.show()

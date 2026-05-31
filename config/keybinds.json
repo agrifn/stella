@@ -1,5 +1,5 @@
 {
-  "_comment": "Curated Star Citizen Alpha 4.0 commands (from scfocus.org defaults). LLM classifies intent; server resolves key. Keys use pydirectinput names. Edit to match your personal SC bindings. Manage via the command-manager GUI.",
+  "_comment": "Curated Star Citizen Alpha 4.0 commands (from scfocus.org defaults). LLM classifies intent; server resolves key. Keys use pydirectinput names. Edit to match your personal SC bindings. Manage via the command-manager GUI. Note: landing_gear (tap N) and autoland (hold N) intentionally share key N - in SC a tap toggles gear and a hold triggers autoland, so the tap-vs-hold distinction is correct, not a duplicate.",
   "keybinds": {
     "decouple_toggle": {
       "key": "c",

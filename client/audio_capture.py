@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 from typing import Callable, Optional
 
 import keyboard
@@ -67,14 +68,24 @@ class PTTRecorder:
             self._stream = None
 
     # -- capture ----------------------------------------------------------
-    def record_once(self, on_start=None, on_stop=None) -> np.ndarray:
+    def record_once(self, on_start=None, on_stop=None,
+                    timeout: Optional[float] = None) -> np.ndarray:
         """Block until PTT is pressed, record until released, return the audio.
 
         on_start fires when the key goes down (recording begins) and on_stop when
-        it is released - used to drive a 'listening' indicator in the UI.
+        it is released - used to drive a 'listening' indicator in the UI. If timeout
+        is given and PTT is not pressed within that many seconds, return an empty
+        array (used by the confirmation capture so an unanswered prompt auto-cancels).
         """
         self.open()
-        keyboard.wait(self.ptt_key)
+        if timeout is None:
+            keyboard.wait(self.ptt_key)
+        else:
+            deadline = time.monotonic() + timeout
+            while not keyboard.is_pressed(self.ptt_key):
+                if time.monotonic() >= deadline:
+                    return np.zeros(0, dtype=np.float32)
+                sd.sleep(20)
         self._frames = []
         self._recording.set()
         if on_start:

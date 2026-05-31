@@ -5,11 +5,13 @@ import requests
 
 
 class CommandsAPI:
-    def __init__(self, server_url: str, timeout: float = 15.0):
+    def __init__(self, server_url: str, token: str | None = None, timeout: float = 15.0):
         self._url = server_url.rstrip("/")
         self._timeout = timeout
         self._s = requests.Session()
         self._s.headers["Connection"] = "close"  # avoid stale WSL2 keep-alive sockets
+        if token:  # optional shared secret; server requires it only when configured
+            self._s.headers["Authorization"] = f"Bearer {token}"
 
     def list(self) -> list[dict]:
         r = self._s.get(f"{self._url}/commands", timeout=self._timeout)

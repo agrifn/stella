@@ -6,6 +6,7 @@ small immutable object, not on raw dict access.
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -46,6 +47,9 @@ class ClientConfig:
     wake_word_enabled: bool = False      # spoken wake word (needs a model; see wake_word_model)
     wake_word_model: str = ""            # path to the openWakeWord 'stella' model (.onnx/.tflite)
     wake_word_threshold: float = 0.5     # detection confidence 0-1
+    # Optional API token sent as 'Authorization: Bearer <token>' to the server. Must
+    # match the server's STELLA_API_TOKEN. Empty = no auth header (the default).
+    api_token: str = ""
     # Overlay HUD
     overlay_corner: str = "top-left"  # top-left | top-right | bottom-left | bottom-right
     overlay_opacity: float = 0.85
@@ -82,6 +86,7 @@ def load_client_config(settings_path: Path | None = None) -> ClientConfig:
         wake_word_enabled=bool(client.get("wake_word_enabled", ClientConfig.wake_word_enabled)),
         wake_word_model=client.get("wake_word_model", ClientConfig.wake_word_model),
         wake_word_threshold=float(client.get("wake_word_threshold", ClientConfig.wake_word_threshold)),
+        api_token=os.environ.get("STELLA_API_TOKEN") or client.get("api_token", ClientConfig.api_token),
         overlay_corner=client.get("overlay_corner", ClientConfig.overlay_corner),
         overlay_opacity=float(client.get("overlay_opacity", ClientConfig.overlay_opacity)),
         overlay_margin=int(client.get("overlay_margin", ClientConfig.overlay_margin)),

@@ -130,8 +130,8 @@ def _stat_block(d: dict) -> dict:
     for k, v in d.items():
         if isinstance(v, bool):
             out[k] = v
-        elif isinstance(v, (int, float)) and v not in (0,):
-            out[k] = v
+        elif isinstance(v, (int, float)):
+            out[k] = v  # keep real zeros (e.g. a resistance/modifier of 0 is meaningful)
         elif isinstance(v, str) and v:
             out[k] = v
         elif k == "resistance" and isinstance(v, dict):

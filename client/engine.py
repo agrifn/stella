@@ -14,7 +14,6 @@ from __future__ import annotations
 import ctypes
 import logging
 import os
-import re
 import threading
 import time
 
@@ -25,20 +24,11 @@ from .audio_player import AudioPlayer
 from .chat_injector import ChatInjector
 from .command_sender import CommandSender
 from .config import ClientConfig
+from .confirm import is_affirmative
 from .keybind_executor import KeybindExecutor
 from .stt_handler import STTHandler
 
 log = logging.getLogger("stella.engine")
-
-_AFFIRMATIVE = ["yes", "yeah", "yep", "confirm", "confirmed", "affirmative",
-                "do it", "go", "execute", "proceed", "engage"]
-# Word-boundary match so "go" matches only the standalone word, NOT "good", "ago",
-# or "let it go" - critical because this gates eject / self destruct.
-_AFFIRMATIVE_RE = re.compile(r"\b(" + "|".join(re.escape(w) for w in _AFFIRMATIVE) + r")\b")
-
-
-def is_affirmative(text: str) -> bool:
-    return bool(_AFFIRMATIVE_RE.search((text or "").lower()))
 
 
 def is_admin() -> bool:
@@ -56,7 +46,7 @@ class StellaEngine:
         do_exec = cfg.execute_keys if execute_keys is None else execute_keys
 
         self.stt = STTHandler(cfg.whisper_model, cfg.whisper_device, cfg.whisper_compute_type)
-        self.sender = CommandSender(cfg.server_url)
+        self.sender = CommandSender(cfg.server_url, cfg.api_token)
         self.player = AudioPlayer(cfg.output_device)
         self.executor = KeybindExecutor(hold_duration=cfg.hold_duration, enabled=do_exec)
         self.chat = ChatInjector(cfg.chat_open_key, cfg.chat_send_key,
@@ -210,7 +200,9 @@ class StellaEngine:
         if res.confirm_required:
             self._speak_blocking(res.response_text)
             self._emit("await_confirm", intent=res.intent)
-            conf_audio = self.recorder.record_once()
+            # Bounded wait: if the pilot never presses PTT to answer, auto-cancel
+            # instead of blocking the engine loop forever.
+            conf_audio = self.recorder.record_once(timeout=6.0)
             conf_text = self.stt.transcribe(conf_audio) if len(conf_audio) else ""
             self._emit("transcript", text=conf_text)
             if not is_affirmative(conf_text):

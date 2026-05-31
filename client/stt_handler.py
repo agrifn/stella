@@ -1,8 +1,9 @@
 """faster-whisper speech-to-text.
 
 Loads a Whisper model on CUDA (with CPU fallback) and transcribes float32 mono
-16 kHz audio. VRAM footprint for 'small' int8 is ~0.5 GB, transient, so it does
-not meaningfully compete with Star Citizen on an 8 GB card.
+16 kHz audio. The shipped default (config/settings.json) is 'large-v3-turbo' at
+float16, roughly 1.5 GB VRAM, which is comfortable on the target 5090. On an 8 GB
+card prefer 'small' / int8 (about 0.5 GB) by editing settings.json.
 """
 from __future__ import annotations
 

@@ -6,7 +6,9 @@ __pycache__/
 
 # Secrets and local runtime state (never commit API keys)
 .env
-config/active_voice.txt
+# Local voices dir (downloaded .onnx voices + the active.txt marker) when the
+# server runs outside Docker; in the container these live in a named volume.
+server/voices/
 
 # Model + audio artifacts (downloaded at runtime / generated)
 *.onnx
