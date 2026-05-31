@@ -17,6 +17,8 @@ import re
 import threading
 import time
 
+import numpy as np
+
 from .audio_capture import PTTRecorder
 from .audio_player import AudioPlayer
 from .chat_injector import ChatInjector
@@ -90,9 +92,18 @@ class StellaEngine:
         self._emit("status", text="ready")
 
     # -- one utterance ----------------------------------------------------
+    # Gate out accidental PTT taps and (near-)silence before STT, so Whisper
+    # never gets a chance to hallucinate a phantom command from noise.
+    _MIN_DUR_S = 0.35
+    _MIN_RMS = 0.006
+
     def process(self, audio):
         t0 = time.time()
         dur = len(audio) / self.stt.samplerate
+        rms = float(np.sqrt(np.mean(np.square(audio)))) if len(audio) else 0.0
+        if dur < self._MIN_DUR_S or rms < self._MIN_RMS:
+            log.info("skip utterance: %.2fs rms=%.4f (too short/quiet)", dur, rms)
+            return
         text = self.stt.transcribe(audio)
         t_stt = time.time() - t0
         self._emit("transcript", text=text)

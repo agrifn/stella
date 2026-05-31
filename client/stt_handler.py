@@ -15,6 +15,14 @@ from .cuda_paths import ensure_cuda_dlls
 
 log = logging.getLogger("stella.stt")
 
+# Phrases Whisper commonly hallucinates from silence/noise. If a transcript is
+# nothing but one of these, treat it as empty so it never becomes a command.
+_HALLUCINATIONS = {
+    "", ".", "..", "...", "you", "thank you", "thanks", "thanks for watching",
+    "thank you for watching", "please subscribe", "subscribe", "bye", "okay",
+    "ok", "uh", "um", "i'm sorry", "you're welcome", "so", "yeah", ".you",
+}
+
 
 class STTHandler:
     def __init__(self, model_size: str, device: str = "cuda", compute_type: str = "int8"):
@@ -41,4 +49,16 @@ class STTHandler:
             return ""
         audio = np.asarray(audio, dtype=np.float32).reshape(-1)
         segments, _info = self._model.transcribe(audio, vad_filter=True, language="en")
-        return " ".join(seg.text for seg in segments).strip()
+        # Keep only confident speech segments; Whisper marks noise/silence with a
+        # high no_speech_prob and/or very low avg_logprob, then hallucinates text.
+        kept = []
+        for seg in segments:
+            if getattr(seg, "no_speech_prob", 0.0) > 0.6:
+                continue
+            if getattr(seg, "avg_logprob", 0.0) < -1.0:
+                continue
+            kept.append(seg.text)
+        text = " ".join(kept).strip()
+        if text.lower().strip(" .!?,") in _HALLUCINATIONS:
+            return ""
+        return text
