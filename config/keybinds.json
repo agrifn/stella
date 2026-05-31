@@ -1,0 +1,410 @@
+{
+  "_comment": "Curated Star Citizen Alpha 4.0 commands (from scfocus.org defaults). LLM classifies intent; server resolves key. Keys use pydirectinput names. Edit to match your personal SC bindings. Manage via the command-manager GUI.",
+  "keybinds": {
+    "decouple_toggle": {
+      "key": "c",
+      "confirm_required": false,
+      "description": "Toggle decoupled/coupled flight mode",
+      "hold": true,
+      "examples": [
+        "decouple",
+        "coupled mode",
+        "decoupled mode",
+        "toggle decouple"
+      ]
+    },
+    "spacebrake": {
+      "key": "x",
+      "confirm_required": false,
+      "description": "Full stop / spacebrake",
+      "examples": [
+        "full stop",
+        "brake",
+        "spacebrake",
+        "all stop"
+      ]
+    },
+    "boost": {
+      "key": "shiftleft",
+      "confirm_required": false,
+      "description": "Afterburner / boost",
+      "hold": true,
+      "examples": [
+        "boost",
+        "afterburner",
+        "punch it",
+        "full burn"
+      ]
+    },
+    "cruise_control_toggle": {
+      "key": "altleft+c",
+      "confirm_required": false,
+      "description": "Toggle cruise control",
+      "examples": [
+        "cruise control",
+        "toggle cruise",
+        "cruise on",
+        "cruise off"
+      ]
+    },
+    "vtol_toggle": {
+      "key": "k",
+      "confirm_required": false,
+      "description": "Toggle VTOL mode",
+      "examples": [
+        "vtol",
+        "vtol mode",
+        "hover mode",
+        "toggle vtol"
+      ]
+    },
+    "throttle_increase_max": {
+      "key": "f10+f10",
+      "confirm_required": false,
+      "description": "Throttle to maximum (double tap)",
+      "examples": [
+        "full throttle",
+        "max throttle",
+        "throttle up max",
+        "all ahead full"
+      ]
+    },
+    "throttle_decrease_min": {
+      "key": "f9+f9",
+      "confirm_required": false,
+      "description": "Throttle to minimum (double tap)",
+      "examples": [
+        "kill throttle",
+        "zero throttle",
+        "throttle down",
+        "idle engines"
+      ]
+    },
+    "landing_gear": {
+      "key": "n",
+      "confirm_required": false,
+      "description": "Toggle landing gear",
+      "examples": [
+        "landing gear",
+        "gear up",
+        "gear down",
+        "toggle gear"
+      ]
+    },
+    "autoland": {
+      "key": "n",
+      "confirm_required": false,
+      "description": "Autoland",
+      "hold": true,
+      "examples": [
+        "autoland",
+        "auto land",
+        "automatic landing",
+        "land automatically"
+      ]
+    },
+    "request_landing": {
+      "key": "altleft+n",
+      "confirm_required": false,
+      "description": "Request landing permission from ATC",
+      "examples": [
+        "request landing",
+        "request permission to land",
+        "hail tower",
+        "ask for landing"
+      ]
+    },
+    "nav_mode": {
+      "key": "b",
+      "confirm_required": false,
+      "description": "Enter quantum/NAV mode (hold and release B)",
+      "hold": true,
+      "examples": [
+        "nav mode",
+        "quantum mode",
+        "navigation mode",
+        "open quantum"
+      ]
+    },
+    "power_toggle_all": {
+      "key": "u",
+      "confirm_required": false,
+      "description": "Toggle all power on/off",
+      "examples": [
+        "power on",
+        "power off",
+        "all power",
+        "toggle power"
+      ]
+    },
+    "systems_ready": {
+      "key": "altright+r",
+      "confirm_required": false,
+      "description": "Flight/systems ready toggle",
+      "examples": [
+        "systems ready",
+        "flight ready",
+        "preflight",
+        "ready up"
+      ]
+    },
+    "weapons_power_toggle": {
+      "key": "p",
+      "confirm_required": false,
+      "description": "Toggle weapons power on/off",
+      "examples": [
+        "weapons power",
+        "weapons on",
+        "weapons off",
+        "arm weapons"
+      ]
+    },
+    "shields_power_toggle": {
+      "key": "o",
+      "confirm_required": false,
+      "description": "Toggle shields power on/off",
+      "examples": [
+        "shields power",
+        "shields on",
+        "shields off",
+        "toggle shields"
+      ]
+    },
+    "thrusters_power_toggle": {
+      "key": "i",
+      "confirm_required": false,
+      "description": "Toggle thruster power on/off",
+      "examples": [
+        "thrusters power",
+        "thrusters on",
+        "thrusters off",
+        "toggle thrusters"
+      ]
+    },
+    "reset_power": {
+      "key": "f8",
+      "confirm_required": false,
+      "description": "Reset power distribution to default",
+      "examples": [
+        "reset power",
+        "balance power",
+        "default power",
+        "equalize power"
+      ]
+    },
+    "weapons_power_max": {
+      "key": "f5",
+      "confirm_required": false,
+      "description": "Set weapons power to maximum",
+      "hold": true,
+      "examples": [
+        "max weapon power",
+        "full power to weapons",
+        "all power to weapons",
+        "weapons to max"
+      ]
+    },
+    "engines_power_max": {
+      "key": "f6",
+      "confirm_required": false,
+      "description": "Set engines power to maximum",
+      "hold": true,
+      "examples": [
+        "max engine power",
+        "full power to engines",
+        "all power to engines",
+        "engines to max"
+      ]
+    },
+    "shields_power_max": {
+      "key": "f7",
+      "confirm_required": false,
+      "description": "Set shields power to maximum",
+      "hold": true,
+      "examples": [
+        "max shield power",
+        "full power to shields",
+        "all power to shields",
+        "shields to max"
+      ]
+    },
+    "unlock_target": {
+      "key": "altleft+t",
+      "confirm_required": false,
+      "description": "Unlock current target",
+      "examples": [
+        "unlock target",
+        "clear target",
+        "release target",
+        "drop target"
+      ]
+    },
+    "gimbal_cycle": {
+      "key": "g",
+      "confirm_required": false,
+      "description": "Cycle gimbal assist / standard / locked modes",
+      "hold": true,
+      "examples": [
+        "cycle gimbal",
+        "gimbal mode",
+        "switch gimbal",
+        "next gimbal mode"
+      ]
+    },
+    "decoy_burst": {
+      "key": "h",
+      "confirm_required": false,
+      "description": "Launch decoy burst (tap)",
+      "examples": [
+        "flares",
+        "chaff",
+        "countermeasures",
+        "decoys"
+      ]
+    },
+    "scan_mode": {
+      "key": "v",
+      "confirm_required": false,
+      "description": "Enter scanning operator mode",
+      "examples": [
+        "scan mode",
+        "scanning mode",
+        "start scanning",
+        "begin scan"
+      ]
+    },
+    "ping": {
+      "key": "tab",
+      "confirm_required": false,
+      "description": "Activate ping / radar pulse",
+      "examples": [
+        "ping",
+        "radar ping",
+        "pulse radar",
+        "scan ping"
+      ]
+    },
+    "mfd_cycle_forward": {
+      "key": "altleft+e",
+      "confirm_required": false,
+      "description": "Cycle MFD page forward",
+      "examples": [
+        "next mfd",
+        "next display",
+        "cycle mfd",
+        "next page"
+      ]
+    },
+    "mfd_cycle_back": {
+      "key": "altleft+q",
+      "confirm_required": false,
+      "description": "Cycle MFD page backward",
+      "examples": [
+        "previous mfd",
+        "previous display",
+        "mfd back",
+        "last page"
+      ]
+    },
+    "exit_seat": {
+      "key": "y",
+      "confirm_required": false,
+      "description": "Exit pilot seat",
+      "hold": true,
+      "examples": [
+        "exit seat",
+        "get up",
+        "leave seat",
+        "stand up"
+      ]
+    },
+    "look_behind": {
+      "key": "comma",
+      "confirm_required": false,
+      "description": "Look behind",
+      "examples": [
+        "look behind",
+        "rear view",
+        "check six",
+        "look back"
+      ]
+    },
+    "headlights": {
+      "key": "l",
+      "confirm_required": false,
+      "description": "Toggle ship headlights",
+      "examples": [
+        "lights",
+        "headlights",
+        "lights on",
+        "lights off"
+      ]
+    },
+    "mobiglas": {
+      "key": "f1",
+      "confirm_required": false,
+      "description": "Open Mobiglas",
+      "examples": [
+        "mobiglas",
+        "open mobiglas",
+        "mobi"
+      ]
+    },
+    "comms": {
+      "key": "f11",
+      "confirm_required": false,
+      "description": "Open CommLink app",
+      "examples": [
+        "comms",
+        "commlink",
+        "open comms",
+        "communications"
+      ]
+    },
+    "starmap": {
+      "key": "f2",
+      "confirm_required": false,
+      "description": "Open starmap",
+      "examples": [
+        "starmap",
+        "open map",
+        "show map",
+        "navigation map"
+      ]
+    },
+    "camera_cycle": {
+      "key": "f4",
+      "confirm_required": false,
+      "description": "Cycle camera view (1st/3rd person)",
+      "examples": [
+        "cycle camera",
+        "third person",
+        "first person",
+        "switch camera"
+      ]
+    },
+    "eject": {
+      "key": "altright+y",
+      "confirm_required": true,
+      "description": "Eject from ship",
+      "examples": [
+        "eject",
+        "eject eject eject",
+        "punch out",
+        "bail out"
+      ]
+    },
+    "self_destruct": {
+      "key": "backspace",
+      "confirm_required": true,
+      "description": "Ship self destruct",
+      "hold": true,
+      "examples": [
+        "self destruct",
+        "scuttle ship",
+        "destroy ship",
+        "blow it up"
+      ]
+    }
+  }
+}

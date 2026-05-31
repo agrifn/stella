@@ -1,0 +1,42 @@
+{
+  "_comment": "Global settings shared conceptually by client and server. The server reads the 'server' and 'llm'/'tts' sections; the client reads 'server_url', hotkeys, and mode.",
+  "server": {
+    "host": "0.0.0.0",
+    "port": 8420
+  },
+  "server_url": "http://127.0.0.1:8420",
+  "llm": {
+    "provider": "ollama",
+    "ollama_url": "http://127.0.0.1:11434",
+    "model": "llama3.2:3b",
+    "temperature": 0.0,
+    "num_ctx": 2048,
+    "keep_alive": "24h",
+    "base_url": null,
+    "api_key": null
+  },
+  "tts": {
+    "enabled": true,
+    "voice": "en_US-lessac-medium",
+    "sample_rate": 22050
+  },
+  "client": {
+    "ptt_key": "right ctrl",
+    "mode_toggle_key": "ctrl+alt+m",
+    "samplerate": 16000,
+    "input_device": null,
+    "output_device": null,
+    "default_mode": "COMMAND",
+    "whisper_model": "large-v3-turbo",
+    "whisper_device": "cuda",
+    "whisper_compute_type": "float16",
+    "execute_keys": true,
+    "hold_duration": 1.5,
+    "chat_open_key": "",
+    "chat_send_key": "enter",
+    "chat_open_delay": 0.25,
+    "overlay_corner": "top-left",
+    "overlay_opacity": 0.85,
+    "overlay_margin": 24
+  }
+}

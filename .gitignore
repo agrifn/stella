@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+
+# Secrets and local runtime state (never commit API keys)
+.env
+config/active_voice.txt
+
+# Model + audio artifacts (downloaded at runtime / generated)
+*.onnx
+*.onnx.json
+sample_*.wav
+
+# OS / editor cruft
+Thumbs.db
+.DS_Store
+.vscode/
+.idea/

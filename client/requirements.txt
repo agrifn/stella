@@ -1,0 +1,18 @@
+# STELLA desktop client (Windows, Python 3.10+)
+faster-whisper>=1.2
+sounddevice>=0.5
+numpy>=2.0
+keyboard>=0.13
+requests>=2.32
+
+# CUDA runtime libs for faster-whisper / CTranslate2 on NVIDIA GPUs (Windows).
+# These ship cublas64_12.dll and cudnn64_9.dll; client/cuda_paths.py adds their
+# bin dirs to PATH at startup. Omit on a CPU-only machine.
+nvidia-cublas-cu12
+nvidia-cudnn-cu12
+
+# Phase 3: send keybinds to Star Citizen
+pydirectinput
+
+# Command-manager GUI (Phase 3) and overlay (Phase 4)
+PyQt6

@@ -1,0 +1,9 @@
+client/
+docs/
+**/.venv
+**/__pycache__
+**/*.pyc
+**/*.wav
+.git
+.gitignore
+README.md

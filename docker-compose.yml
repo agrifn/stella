@@ -1,0 +1,54 @@
+# STELLA backend stack: Ollama (the LLM, on GPU) + the STELLA API (intent + Piper TTS).
+# The native Windows client talks to the API at http://localhost:8420.
+#
+#   docker compose up -d --build
+#   docker compose exec ollama ollama pull llama3.2:3b   # first time
+#
+# Provider/keys come from a .env file (see .env.example). To use an external LLM
+# instead of the local Ollama, set STELLA_LLM_PROVIDER/MODEL/KEY in .env.
+services:
+  ollama:
+    image: ollama/ollama
+    container_name: stella-ollama
+    restart: unless-stopped
+    volumes:
+      - ollama:/root/.ollama
+    networks: [stella]
+    # GPU passthrough (needs nvidia-container-toolkit on the Docker host).
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  stella-api:
+    build:
+      context: .
+      dockerfile: server/Dockerfile
+    image: stella-api
+    container_name: stella-api
+    restart: unless-stopped
+    depends_on: [ollama]
+    environment:
+      STELLA_LLM_PROVIDER: ${STELLA_LLM_PROVIDER:-ollama}
+      STELLA_OLLAMA_URL: http://ollama:11434
+      STELLA_LLM_MODEL: ${STELLA_LLM_MODEL:-llama3.2:3b}
+      STELLA_LLM_BASE_URL: ${STELLA_LLM_BASE_URL:-}
+      STELLA_LLM_API_KEY: ${STELLA_LLM_API_KEY:-}
+    ports:
+      - "8420:8420"
+    # Mount config so command edits (CRUD) persist on the host;
+    # voices volume so added/selected voices survive rebuilds.
+    volumes:
+      - ./config:/app/config
+      - voices:/opt/voices
+    networks: [stella]
+
+networks:
+  stella:
+
+volumes:
+  ollama:
+  voices:

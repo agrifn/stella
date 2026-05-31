@@ -1,0 +1,13 @@
+# Normalize line endings across platforms.
+* text=auto
+
+# Shell scripts and Linux-side files MUST be LF (run inside the container).
+*.sh text eol=lf
+Dockerfile text eol=lf
+
+# Windows batch files are CRLF.
+*.bat text eol=crlf
+
+# Treat audio/model blobs as binary.
+*.wav binary
+*.onnx binary

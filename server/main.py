@@ -1,0 +1,208 @@
+"""STELLA server: FastAPI app exposing /command, /health, and /commands CRUD.
+
+Flow for /command:
+  text -> LLMHandler.parse_intent -> IntentResult (intent + spoken text)
+       -> CommandRegistry.resolve(intent) -> concrete key + confirm flag
+       -> TTSHandler.synthesize(response_text) -> WAV
+       -> CommandResponse (intent, keybind, confirm_required, response_text, audio)
+
+The /commands endpoints manage the command set at runtime (used by the GUI).
+Because the LLM prompt is generated from the registry on every request, adding or
+editing a command immediately changes what the model can recognize.
+"""
+from __future__ import annotations
+
+import base64
+import logging
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, HTTPException
+
+from .command_registry import Command, CommandError, CommandRegistry
+from .config import load_config
+from .llm_handler import LLMHandler
+from .models import (
+    CommandModel,
+    CommandRequest,
+    CommandResponse,
+    CommandUpdate,
+    HealthResponse,
+    SpeakRequest,
+    SpeakResponse,
+    VoiceRequest,
+    VoicesResponse,
+)
+from .prompt_builder import PromptBuilder
+from .tts_handler import TTSHandler
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+log = logging.getLogger("stella")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    cfg = load_config()
+    app.state.cfg = cfg
+    app.state.registry = CommandRegistry(cfg.keybinds_path)
+    app.state.prompt_builder = PromptBuilder(cfg.system_prompt_path)
+    app.state.llm = LLMHandler(
+        cfg.llm,
+        system_prompt_provider=lambda: app.state.prompt_builder.build(app.state.registry),
+    )
+    app.state.tts = TTSHandler(cfg.tts)
+    log.info("STELLA starting: model=%s voice=%s tts_ready=%s commands=%d",
+             cfg.llm.model, cfg.tts.voice, app.state.tts.ready, len(app.state.registry.intents))
+    await app.state.llm.warm()
+    yield
+    await app.state.llm.aclose()
+
+
+app = FastAPI(title="STELLA Server", version="0.2.0", lifespan=lifespan)
+
+
+def _to_model(cmd: Command) -> CommandModel:
+    return CommandModel(
+        intent=cmd.intent,
+        key=cmd.key,
+        confirm_required=cmd.confirm_required,
+        hold=cmd.hold,
+        description=cmd.description,
+        examples=cmd.examples,
+    )
+
+
+# --- Voice command ----------------------------------------------------------
+@app.post("/command", response_model=CommandResponse)
+async def command(req: CommandRequest) -> CommandResponse:
+    llm: LLMHandler = app.state.llm
+    registry: CommandRegistry = app.state.registry
+    tts: TTSHandler = app.state.tts
+
+    try:
+        result = await llm.parse_intent(req.text)
+    except Exception as e:  # noqa: BLE001
+        log.exception("LLM parse failed")
+        raise HTTPException(status_code=502, detail=f"LLM error: {e}") from e
+
+    bind = registry.resolve(result.intent)
+    # Server is authoritative for keybind and the safety/confirm flag.
+    keybind = bind.key if bind else None
+    hold = bind.hold if bind else False
+    confirm_required = bind.confirm_required if bind else False
+
+    audio_b64 = None
+    if req.speak and result.response_text:
+        try:
+            wav = await tts.synthesize(result.response_text)
+            if wav:
+                audio_b64 = base64.b64encode(wav).decode("ascii")
+        except Exception:  # noqa: BLE001 - TTS is non-critical
+            log.exception("TTS failed; returning without audio")
+
+    log.info("cmd: %r -> intent=%s key=%s confirm=%s",
+             req.text, result.intent, keybind, confirm_required)
+    return CommandResponse(
+        intent=result.intent,
+        keybind=keybind,
+        hold=hold,
+        confirm_required=confirm_required,
+        response_text=result.response_text,
+        audio=audio_b64,
+    )
+
+
+# --- Speak arbitrary text (TTS only, no intent parsing) --------------------
+@app.post("/speak", response_model=SpeakResponse)
+async def speak(req: SpeakRequest) -> SpeakResponse:
+    audio_b64 = None
+    try:
+        wav = await app.state.tts.synthesize(req.text)
+        if wav:
+            audio_b64 = base64.b64encode(wav).decode("ascii")
+    except Exception:  # noqa: BLE001 - TTS non-critical
+        log.exception("TTS failed in /speak")
+    return SpeakResponse(text=req.text, audio=audio_b64)
+
+
+# --- Voice management -------------------------------------------------------
+@app.get("/voices", response_model=VoicesResponse)
+async def list_voices() -> VoicesResponse:
+    tts = app.state.tts
+    return VoicesResponse(active=tts.voice, available=tts.available_voices())
+
+
+@app.put("/voices/active", response_model=VoicesResponse)
+async def set_voice(req: VoiceRequest) -> VoicesResponse:
+    tts = app.state.tts
+    try:
+        tts.set_voice(req.voice)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    return VoicesResponse(active=tts.voice, available=tts.available_voices())
+
+
+@app.post("/voices/download", response_model=VoicesResponse)
+async def download_voice(req: VoiceRequest) -> VoicesResponse:
+    tts = app.state.tts
+    try:
+        await tts.download_voice(req.voice)
+    except Exception as e:  # noqa: BLE001 - bad name / network / 404
+        raise HTTPException(status_code=400, detail=f"download failed: {e}") from e
+    return VoicesResponse(active=tts.voice, available=tts.available_voices())
+
+
+# --- Command management (CRUD) ---------------------------------------------
+@app.get("/commands", response_model=list[CommandModel])
+async def list_commands() -> list[CommandModel]:
+    return [_to_model(c) for c in app.state.registry.list()]
+
+
+@app.post("/commands", response_model=CommandModel, status_code=201)
+async def create_command(cmd: CommandModel) -> CommandModel:
+    try:
+        created = app.state.registry.add(Command(
+            intent=cmd.intent.strip(),
+            key=cmd.key,
+            confirm_required=cmd.confirm_required,
+            hold=cmd.hold,
+            description=cmd.description,
+            examples=cmd.examples,
+        ))
+    except CommandError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    log.info("command added: %s", created.intent)
+    return _to_model(created)
+
+
+@app.put("/commands/{intent}", response_model=CommandModel)
+async def update_command(intent: str, patch: CommandUpdate) -> CommandModel:
+    try:
+        updated = app.state.registry.update(intent, **patch.model_dump(exclude_unset=True))
+    except CommandError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    log.info("command updated: %s", intent)
+    return _to_model(updated)
+
+
+@app.delete("/commands/{intent}", status_code=204)
+async def delete_command(intent: str) -> None:
+    try:
+        app.state.registry.delete(intent)
+    except CommandError as e:
+        code = 409 if "reserved" in str(e) else 404
+        raise HTTPException(status_code=code, detail=str(e)) from e
+    log.info("command deleted: %s", intent)
+
+
+# --- Health -----------------------------------------------------------------
+@app.get("/health", response_model=HealthResponse)
+async def health() -> HealthResponse:
+    cfg = app.state.cfg
+    llm_ok = await app.state.llm.health()
+    return HealthResponse(
+        status="ok" if llm_ok else "degraded",
+        provider=cfg.llm.provider,
+        model=cfg.llm.model,
+        llm_reachable=llm_ok,
+        tts_ready=app.state.tts.ready,
+    )
