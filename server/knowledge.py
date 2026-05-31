@@ -1,24 +1,24 @@
 """Optional knowledge module: answer factual Star Citizen questions from real data.
 
-Multi-domain and feature-flagged. Each domain (ships, locations, commodities, ...)
-is fetched from the StarCitizenWiki API and cached as a trimmed index on startup.
-All entities go into ONE searchable pool tagged with their kind.
+Multi-domain and feature-flagged. On startup it caches several trimmed indexes and
+keeps the LLM's job to a single 'info' intent (a small local model can't reliably
+route among many knowledge sub-intents). The handler then figures out, from the
+speech, which kind of question it is and answers from the right source:
 
-A small local model can't reliably route among several knowledge sub-intents, so
-the LLM only has to recognize a single 'info' intent (a factual SC question). The
-handler then fuzzy-matches the entity out of the (messy STT) speech across every
-domain and the LLM composes a short spoken answer grounded ONLY in that entity's
-cached data.
+  - stats        ships / locations / commodities (StarCitizenWiki API v2) AND
+                 weapons / armor / ship components (StarCitizenWiki API, /api)
+  - where to buy items / weapons        UEX Corp API (token-gated, live prices)
+  - crafting / blueprints               StarCitizenWiki API /api/blueprints
 
-"Where to buy / how much" (items, weapons, armor, ship components) is answered from
-the UEX Corp API instead - the wiki and the game files no longer carry shop
-inventories (removed in SC 3.20), so live community price data is the only source.
-This sub-feature is gated on a UEX token (STELLA_UEX_TOKEN); without it the rest of
-the knowledge feature works unchanged. UEX has no blueprint/crafting data, so
-"where to find a blueprint" is intentionally not supported.
+For each, the LLM composes a short spoken answer grounded ONLY in the matched
+record's cached JSON. Routing inside the single intent is by trigger words
+(buy/price -> UEX, craft/blueprint -> blueprints) with a fall-through to stats.
 
-When disabled, none of this runs and the prompt has no 'info' intent - the command
-path is completely unaffected.
+Notes / limits:
+  - Shop inventories left the game files in SC 3.20, so "where to buy" needs UEX
+    (no token => that sub-path is silently off). UEX has no blueprint data.
+  - Item stats come from the newer /api surface (the /api/v2 one lacks them).
+When disabled, none of this runs and the prompt has no 'info' intent.
 """
 from __future__ import annotations
 
@@ -38,15 +38,28 @@ except ImportError:  # matching disabled -> feature degrades gracefully
 
 log = logging.getLogger("stella.knowledge")
 
-_API = "https://api.star-citizen.wiki/api/v2"
+_API = "https://api.star-citizen.wiki/api/v2"   # ships/locations/commodities
+_WIKI = "https://api.star-citizen.wiki/api"     # newer surface: items (stats) + blueprints
 _KIND = "_kind"  # internal tag on each cached entity (its domain label)
+
+# Item categories cached for stat lookups (the /api/items list scopes by type;
+# multiple types can be comma-joined in one filter). Weapons + armor + the main
+# ship components - the gameplay gear a pilot asks stats about.
+_STAT_TYPES = ",".join([
+    "WeaponPersonal", "WeaponGun", "WeaponAttachment", "WeaponDefensive", "WeaponMining",
+    "Char_Armor_Helmet", "Char_Armor_Torso", "Char_Armor_Arms", "Char_Armor_Legs",
+    "Char_Armor_Backpack", "Char_Armor_Undersuit",
+    "Cooler", "PowerPlant", "QuantumDrive", "Shield", "Radar", "JumpDrive",
+    "MainThruster", "ManneuverThruster", "TractorBeam",
+])
 
 _KNOWLEDGE_SYSTEM = (
     "You are STELLA, a Star Citizen ship AI assisting a pilot. Answer the pilot's question "
     "using ONLY the JSON {label} data provided - do not invent numbers or facts. Be concise and "
     "spoken, 1-2 short sentences. Use plain numbers (e.g. '2500 HP', '25 percent'). For ships, "
-    "armor damage_multiplier values are damage taken: 0.75 means 25 percent resistance. If the "
-    "data does not contain the answer, say so briefly."
+    "armor damage_multiplier values are damage taken: 0.75 means 25 percent resistance. For "
+    "weapons, damage_per_shot is per-shot damage and rof/rpm is the rate of fire; resistance maps "
+    "are damage taken by type. If the data does not contain the answer, say so briefly."
 )
 
 _BUY_SYSTEM = (
@@ -55,6 +68,15 @@ _BUY_SYSTEM = (
     "price in aUEC, cheapest first), tell the pilot the best 1-3 places to buy it: shop name, "
     "where it is, and the price. Be concise and spoken, 1-2 short sentences. Use grouped numbers "
     "like '4,700 aUEC'. Do not invent shops, locations, or prices."
+)
+
+_BLUEPRINT_SYSTEM = (
+    "You are STELLA, a Star Citizen ship AI. The pilot is asking about CRAFTING an item. Using "
+    "ONLY the JSON blueprint data (what it makes, craft time, ingredients with quantities, and "
+    "whether it's unlocked by default or via missions), answer concisely and spoken, 1-2 short "
+    "sentences: name the key ingredients and the craft time. If available_by_default is false and "
+    "unlocking_missions is above zero, note the recipe must be unlocked via a mission. Do not "
+    "invent ingredients or numbers."
 )
 
 
@@ -89,6 +111,70 @@ def _trim_commodity(c: dict) -> dict:
     return {
         "name": c.get("name"), "tier": c.get("tier"), "is_mineable": c.get("is_mineable"),
         "density_g_per_cc": c.get("density_g_per_cc"), "description": _short(c.get("description")),
+    }
+
+
+# Fields on a wiki item record that are noise for a spoken stat answer.
+_ITEM_NOISE = {
+    "description", "description_data", "manufacturer_description", "images", "blueprint",
+    "variants", "shops", "uex_prices", "interactions", "ports", "entity_tag_map", "entity_tags",
+    "tags", "required_tags", "dimension", "web_url", "link", "type_web_url", "slug", "uuid",
+    "class_name", "classification", "updated_at", "version", "clothing", "type", "sub_type",
+}
+
+
+def _stat_block(d: dict) -> dict:
+    """Keep the scalar stat fields of a nested dict (damage, rof, range, ...) plus
+    any 'resistance' map; drop verbose sub-arrays like modes/damages."""
+    out: dict = {}
+    for k, v in d.items():
+        if isinstance(v, bool):
+            out[k] = v
+        elif isinstance(v, (int, float)) and v not in (0,):
+            out[k] = v
+        elif isinstance(v, str) and v:
+            out[k] = v
+        elif k == "resistance" and isinstance(v, dict):
+            r = {kk: vv for kk, vv in v.items() if isinstance(vv, (int, float))}
+            if r:
+                out[k] = r
+    return out
+
+
+def _trim_item(it: dict) -> dict:
+    """Generic trim for a wiki item (weapon/armor/component): scalar attributes +
+    its nested stat blocks. Works across types without per-type code."""
+    out: dict = {}
+    for k, v in it.items():
+        if k in _ITEM_NOISE:
+            continue
+        if k == "manufacturer":
+            out["manufacturer"] = v.get("name") if isinstance(v, dict) else v
+        elif isinstance(v, (int, float, str, bool)) and v not in ("", None):
+            out[k] = v
+        elif isinstance(v, dict):
+            block = _stat_block(v)
+            if block:
+                out[k] = block
+    return out
+
+
+def _trim_blueprint(bp: dict) -> dict:
+    ings = []
+    for i in (bp.get("ingredients") or []):
+        if i.get("quantity") is not None:
+            qty = i["quantity"]
+        elif i.get("quantity_scu") is not None:
+            qty = f"{i['quantity_scu']} SCU"
+        else:
+            qty = None
+        ings.append({"name": i.get("name"), "qty": qty, "kind": i.get("kind")})
+    return {
+        "name": bp.get("output_name"), "makes_class": bp.get("output_class"),
+        "craft_time": bp.get("craft_time_label"),
+        "available_by_default": bp.get("is_available_by_default"),
+        "unlocking_missions": bp.get("unlocking_missions_count"),
+        "ingredients": ings,
     }
 
 
@@ -131,19 +217,39 @@ _FIND_RE = re.compile(
 _HOWMUCH_RE = re.compile(
     r"\bhow\s+much\b(?!\s+(armou?r|shield|shields|hp|health|cargo|speed|velocity|"
     r"damage|dps|fuel|crew|mass|cooling|power)\b)")
+# Crafting / blueprint questions -> the blueprints index.
+_CRAFT_RE = re.compile(
+    r"\b(craft|crafted|crafting|craftable|blueprint|blueprints|recipe|recipes|ingredient|"
+    r"ingredients|fabricate|how\s+(do\s+i\s+|to\s+)?make|how\s+(do\s+i\s+|to\s+)?build)\b")
 
-# Filler stripped from the speech before fuzzy-matching an item name.
+# Filler stripped from the speech before fuzzy-matching a name (buy/craft/stat words too).
 _QUERY_STOP = {
     "where", "can", "i", "do", "to", "find", "buy", "get", "the", "a", "an", "is", "are",
     "much", "how", "cost", "costs", "price", "of", "does", "it", "sell", "sold", "purchase",
-    "me", "you", "what", "which", "shop", "store", "for", "sale", "at", "in", "on", "stella",
+    "me", "you", "what", "whats", "hows", "wheres", "which", "shop", "store", "for", "sale",
+    "at", "in", "on", "stella",
     "cheapest", "best", "place", "places", "nearest", "closest", "any", "some", "and",
+    # stat words
+    "fire", "rate", "damage", "dps", "range", "magazine", "capacity", "speed", "armor", "armour",
+    "protect", "protection", "resistance", "stats", "stat", "mass", "size", "fast", "strong",
+    "shields", "shield", "hp", "health", "much",
+    # craft words
+    "craft", "crafting", "blueprint", "recipe", "ingredients", "ingredient", "make", "build",
+    "need", "unlock", "fabricate", "tell", "about", "rating",
 }
+
+
+# Words too common to be a distinctive entity-name token in the stats matcher.
+_COMMON = {"the", "of", "and", "a", "an", "to", "in", "on", "for", "mk", "type"}
 
 
 def _is_buy_query(text: str) -> bool:
     tl = text.lower()
     return bool(_BUY_RE.search(tl) or _FIND_RE.search(tl) or _HOWMUCH_RE.search(tl))
+
+
+def _is_craft_query(text: str) -> bool:
+    return bool(_CRAFT_RE.search(text.lower()))
 
 
 def _clean_query(text: str) -> str:
@@ -156,6 +262,27 @@ def _place(p: dict) -> str:
             or p.get("outpost_name") or p.get("orbit_name"))
     parts = [x for x in (spot, p.get("planet_name"), p.get("star_system_name")) if x]
     return ", ".join(dict.fromkeys(parts))  # dedupe (e.g. orbit == planet)
+
+
+def _fuzzy_pick(query: str, names: list[str], items: list[dict], cutoff: int = 72):
+    """Pick the best item whose name matches the (de-filtered) query.
+
+    Two stages: token_set_ratio for RECALL (find candidates that contain the query
+    tokens, tolerant of word order/extra words), then re-rank by token_sort_ratio
+    for PRECISION (it penalises a candidate's extra tokens, so 'Crusader' beats
+    'ADP Arms Crusader Edition' and 'Guardian MX' beats 'Guardian'); shortest name
+    breaks ties (prefers the base variant, e.g. 'P4-AR Rifle')."""
+    if not items or process is None or not query:
+        return None
+    cands = process.extract(query, names, scorer=fuzz.token_set_ratio,
+                            processor=utils.default_process, limit=15)
+    cands = [c for c in cands if c[1] >= cutoff]
+    if not cands:
+        return None
+    qn = utils.default_process(query)
+    best = max(cands, key=lambda c: (fuzz.token_sort_ratio(qn, utils.default_process(c[0])),
+                                     -len(c[0])))
+    return items[best[2]]
 
 
 def _match(items: list[dict], text: str) -> dict | None:
@@ -181,7 +308,8 @@ def _match(items: list[dict], text: str) -> dict | None:
 
     best, best_score = None, 0.0
     for it in items:
-        ntoks = [t for t in re.findall(r"[a-z0-9]+", (it.get("name") or "").lower()) if len(t) >= 3]
+        ntoks = [t for t in re.findall(r"[a-z0-9]+", (it.get("name") or "").lower())
+                 if len(t) >= 3 and t not in _COMMON]
         if not ntoks:
             continue
         matched = sum(1 for t in ntoks if any(fuzz.ratio(t, w) >= 88 for w in words))
@@ -203,7 +331,12 @@ class KnowledgeHandler:
         self._uex_base = (getattr(cfg, "uex_base", None)
                           or "https://api.uexcorp.space/2.0").rstrip("/")
         self._uex = bool(self.enabled and self._uex_token)
-        self._all: list[dict] = []          # stats pool (ships/locations/commodities), each tagged _KIND
+        self._all: list[dict] = []          # v2 stats (ships/locations/commodities), each tagged _KIND
+        self._equipment: list[dict] = []     # weapons/armor/components (stats), tagged _KIND
+        self._stats_items: list[dict] = []   # unified search pool = _all + _equipment
+        self._stats_names: list[str] = []    # names aligned to _stats_items
+        self._blueprints: list[dict] = []    # crafting recipes
+        self._bp_names: list[str] = []
         self._items: list[dict] = []        # UEX items for buy lookups: {id, name, section, company}
         self._item_names: list[str] = []    # names aligned to _items (rapidfuzz choices)
         self._price_cache: dict[int, list] = {}
@@ -222,11 +355,14 @@ class KnowledgeHandler:
         if not self.enabled:
             return []
         line = ("- info: the pilot asks a FACTUAL question about a Star Citizen SHIP/vehicle, "
-                "LOCATION (planet, moon, space station, star system), or COMMODITY/trade good - "
-                "its stats, where it is, or what it is. ANY 'what is X / where is X / what type "
-                "is X / how fast/big/strong is X / tell me about X' where X is a name is info, "
-                "even if you don't recognise the name. A ship/place/commodity NAME with a stat "
-                "word (armor, shields, speed, cargo) is info, NOT a power command.")
+                "LOCATION (planet, moon, space station, star system), COMMODITY/trade good, or a "
+                "piece of EQUIPMENT (weapon, armor, ship component) - its stats, where it is, or "
+                "what it is. ANY 'what is X / where is X / what type is X / how fast/big/strong is "
+                "X / tell me about X' where X is a name is info, even if you don't recognise the "
+                "name. A ship/place/item NAME with a stat word (armor, shields, speed, cargo, "
+                "damage, fire rate) is info, NOT a power command.")
+        line += (" ALSO info: CRAFTING questions - what's needed to craft/make an item, its "
+                 "ingredients, craft time, or how a blueprint is unlocked.")
         if self._uex:
             line += (" ALSO info: WHERE TO BUY or the PRICE/COST of an item, weapon, armor, or "
                      "ship component - 'where can I buy X', 'how much is X', 'where do I find X', "
@@ -242,7 +378,8 @@ class KnowledgeHandler:
                     f'Output: {{"intent":"info","confirm_required":false,"response_text":""}}')
         out = [ex("what is the guardian MX armor"), ex("cutlass black shields"),
                ex("where is crusader"), ex("what type is hurston"),
-               ex("is laranite mineable")]
+               ex("whats the A03 sniper fire rate"),
+               ex("what do I need to craft an omnisky three")]
         if self._uex:
             out += [ex("where can I buy a P4-AR"), ex("how much is a demeco")]
         return out
@@ -252,6 +389,8 @@ class KnowledgeHandler:
         if not self.enabled:
             self._ready.set()
             return
+        # Core: stats pool (v2 ships/locations/commodities) + UEX buy index. These
+        # gate _ready so the common paths are available quickly after startup.
         async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
             for d in _DOMAINS:
                 try:
@@ -262,12 +401,32 @@ class KnowledgeHandler:
                     log.info("knowledge: cached %d %s", len(items), d.label)
                 except Exception:  # noqa: BLE001 - one domain failing shouldn't sink the rest
                     log.exception("knowledge: failed to load %s", d.label)
+        self._rebuild_stats_index()
         if self._uex:
             try:
                 await self._load_uex_items()
             except Exception:  # noqa: BLE001 - UEX is an optional add-on
                 log.exception("knowledge: failed to load UEX items")
         self._ready.set()
+
+        # Heavier add-ons (equipment stats ~34 pages, blueprints ~16) load in the
+        # background; until each finishes, those queries just miss gracefully.
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+            try:
+                eq = await self._fetch_wiki(client, "items", {"filter[type]": _STAT_TYPES},
+                                            _trim_item, tag="equipment")
+                self._equipment = eq
+                self._rebuild_stats_index()
+                log.info("knowledge: cached %d equipment items (stats)", len(eq))
+            except Exception:  # noqa: BLE001
+                log.exception("knowledge: failed to load equipment stats")
+            try:
+                bp = await self._fetch_wiki(client, "blueprints", {}, _trim_blueprint)
+                self._blueprints = bp
+                self._bp_names = [b["name"] for b in bp]
+                log.info("knowledge: cached %d blueprints", len(bp))
+            except Exception:  # noqa: BLE001
+                log.exception("knowledge: failed to load blueprints")
 
     async def _fetch(self, client: httpx.AsyncClient, d: Domain) -> list[dict]:
         out: list[dict] = []
@@ -283,6 +442,36 @@ class KnowledgeHandler:
                 if page >= last:
                     break
                 page += 1
+        return out
+
+    async def _fetch_wiki(self, client: httpx.AsyncClient, path: str, params: dict,
+                          trim: Callable[[dict], dict], tag: str | None = None) -> list[dict]:
+        """Paginate the newer /api surface and trim each record."""
+        out: list[dict] = []
+        page = 1
+        while True:
+            p = dict(params, **{"page[size]": 100, "page[number]": page})
+            j = None
+            for attempt in range(3):  # large item pages occasionally drop mid-stream
+                try:
+                    r = await client.get(f"{_WIKI}/{path}", params=p)
+                    r.raise_for_status()
+                    j = r.json()
+                    break
+                except (httpx.TransportError, httpx.HTTPStatusError):
+                    if attempt == 2:
+                        raise
+                    await asyncio.sleep(0.5 * (attempt + 1))
+            for v in j.get("data", []) or []:
+                t = trim(v)
+                if t and t.get("name"):
+                    if tag:
+                        t[_KIND] = tag
+                    out.append(t)
+            last = int((j.get("meta") or {}).get("last_page", page))
+            if page >= last or page >= 200:  # 200-page hard stop (safety)
+                break
+            page += 1
         return out
 
     async def _load_uex_items(self) -> None:
@@ -319,24 +508,15 @@ class KnowledgeHandler:
         self._price_cache[item_id] = data
         return data
 
+    def _rebuild_stats_index(self) -> None:
+        """Unify the v2 pool and equipment into one searchable stats index."""
+        self._stats_items = self._all + self._equipment
+        self._stats_names = [it.get("name") or "" for it in self._stats_items]
+
     # -- matching ---------------------------------------------------------
     def _match_item(self, text: str) -> dict | None:
-        """Fuzzy-match a UEX item from speech. Item names carry model codes and
-        variants ('P4-AR "Warhawk" Rifle'), so use token-set matching over the
-        de-filtered query and prefer the shortest (base) name on near-ties."""
-        if not self._items or process is None:
-            return None
-        q = _clean_query(text)
-        if not q:
-            return None
-        res = process.extract(q, self._item_names, scorer=fuzz.token_set_ratio,
-                              processor=utils.default_process, limit=10)
-        res = [r for r in res if r[1] >= 72]
-        if not res:
-            return None
-        top = max(r[1] for r in res)
-        best = min((r for r in res if r[1] >= top - 3), key=lambda r: len(r[0]))
-        return self._items[best[2]]
+        """Fuzzy-match a UEX item (for buy lookups) from speech."""
+        return _fuzzy_pick(_clean_query(text), self._item_names, self._items)
 
     # -- answer -----------------------------------------------------------
     async def answer(self, intent: str, text: str, llm) -> str | None:
@@ -347,25 +527,39 @@ class KnowledgeHandler:
         except asyncio.TimeoutError:
             return "Database is still loading, try again in a moment."
 
-        # Buy/price questions go to UEX; a miss falls through to the stats pool
-        # (covers e.g. "where can I find Crusader", which isn't an item).
+        # Crafting question -> blueprints (miss falls through to stats).
+        if _is_craft_query(text) and self._blueprints:
+            bp = _fuzzy_pick(_clean_query(text), self._bp_names, self._blueprints)
+            if bp:
+                return await self._compose(_BLUEPRINT_SYSTEM, "blueprint", bp, text, llm)
+
+        # Buy/price question -> UEX (miss falls through to stats, e.g. "where can I
+        # find Crusader", which is a location not an item).
         if self._uex and _is_buy_query(text):
             item = self._match_item(text)
             if item:
                 return await self._answer_buy(item, text, llm)
 
-        if not self._all:
-            return "The knowledge database is unavailable right now."
-        entity = _match(self._all, text)
+        # Stats: one unified fuzzy match over ships/locations/commodities + equipment
+        # (the two-stage scorer picks the best entity across the namespaces). Fall
+        # back to the two-tier substring matcher over the v2 pool on a miss.
+        entity = _fuzzy_pick(_clean_query(text), self._stats_names, self._stats_items)
         if not entity:
+            entity = _match(self._all, text)
+        if not entity:
+            if not self._stats_items:
+                return "The knowledge database is unavailable right now."
             return "I couldn't identify what you're asking about."
-        label = entity.get(_KIND, "thing")
+        label = entity.get(_KIND) or entity.get("type_label") or "item"
+        return await self._compose(_KNOWLEDGE_SYSTEM.format(label=label), label, entity, text, llm)
+
+    async def _compose(self, system: str, label: str, entity: dict, text: str, llm) -> str | None:
         clean = {k: v for k, v in entity.items() if k != _KIND}
         user = f"Question: {text}\nData: {json.dumps(clean, separators=(',', ':'))}"
         try:
-            return (await llm.generate(_KNOWLEDGE_SYSTEM.format(label=label), user)).strip()
+            return (await llm.generate(system, user)).strip()
         except Exception:  # noqa: BLE001
-            log.exception("knowledge: compose failed")
+            log.exception("knowledge: compose failed (%s)", label)
             return None
 
     async def _answer_buy(self, item: dict, text: str, llm) -> str | None:

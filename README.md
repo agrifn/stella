@@ -50,10 +50,15 @@ ONE machine (Windows + WSL2, RTX 5090)
   - selected in `.env`.
 - **Knowledge lookups (optional):** ask factual questions about ships, locations, and
   commodities ("what's the Guardian MX armor rating", "how fast is a Gladius", "where is
-  Crusader", "is laranite mineable"). STELLA caches indexes from the StarCitizenWiki API,
-  fuzzy-matches the subject from your speech, and answers from real data. Toggle with
+  Crusader", "is laranite mineable"), plus weapon/armor/component **stats** ("what's the
+  A03 sniper's fire rate", "Scourge railgun damage"). STELLA caches indexes from the
+  StarCitizenWiki API, fuzzy-matches the subject from your speech (a two-stage matcher
+  disambiguates across ships/places/gear), and answers from real data. Toggle with
   `knowledge.enabled` in settings; when off it adds zero overhead (the command path is
   never touched).
+- **Crafting / blueprints:** ask how to craft something ("what do I need to craft an
+  Omnisky III", "how long does it take", "how is that blueprint unlocked"). Backed by the
+  StarCitizenWiki `/api/blueprints` data (ingredients, craft time, unlocking missions).
 - **"Where to buy" lookups (optional, UEX):** ask where to buy an item/weapon or what it
   costs ("where can I buy a P4-AR", "how much is an Arrowhead", "cheapest power plant").
   Backed by the [UEX Corp](https://uexcorp.space) live trade API - set a free
