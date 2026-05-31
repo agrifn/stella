@@ -21,7 +21,7 @@ COPY server/ /app/server/
 COPY config/ /app/config/
 RUN sed -i 's/\r$//' /app/server/entrypoint.sh  # tolerate CRLF from Windows
 
-ENV STELLA_PIPER_BIN=/opt/piper/piper \
+ENV STELLA_PIPER_BIN="python3 -m piper" \
     STELLA_VOICES_DIR=/opt/voices \
     STELLA_HOST=0.0.0.0 \
     STELLA_PORT=8420

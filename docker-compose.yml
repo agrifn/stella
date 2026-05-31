@@ -31,6 +31,9 @@ services:
     container_name: stella-api
     restart: unless-stopped
     depends_on: [ollama]
+    # Reach the host-side Chatterbox TTS service (chatterbox-tts.service on :8123).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       STELLA_LLM_PROVIDER: ${STELLA_LLM_PROVIDER:-ollama}
       STELLA_OLLAMA_URL: http://ollama:11434
@@ -39,6 +42,9 @@ services:
       STELLA_LLM_API_KEY: ${STELLA_LLM_API_KEY:-}
       # UEX Corp API token for "where to buy" item/weapon lookups (optional).
       STELLA_UEX_TOKEN: ${STELLA_UEX_TOKEN:-}
+      # TTS engine: "chatterbox" (host service) or "piper" (in-container fallback).
+      STELLA_TTS_ENGINE: ${STELLA_TTS_ENGINE:-chatterbox}
+      STELLA_CHATTERBOX_URL: ${STELLA_CHATTERBOX_URL:-http://host.docker.internal:8123}
     ports:
       - "8420:8420"
     # Mount config so command edits (CRUD) persist on the host;

@@ -10,6 +10,8 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
+import os
+import shlex
 import wave
 from pathlib import Path
 from typing import Optional
@@ -65,7 +67,11 @@ class TTSHandler:
 
     @property
     def ready(self) -> bool:
-        return self._cfg.enabled and self._model_path().exists()
+        if not self._cfg.enabled:
+            return False
+        if os.environ.get("STELLA_TTS_ENGINE", "piper") == "chatterbox":
+            return True
+        return self._model_path().exists()
 
     # -- voice catalogue --------------------------------------------------
     def available_voices(self) -> list[str]:
@@ -117,8 +123,14 @@ class TTSHandler:
     async def synthesize(self, text: str) -> Optional[bytes]:
         if not self.ready or not text.strip():
             return None
+        if os.environ.get("STELLA_TTS_ENGINE", "piper") == "chatterbox":
+            url = os.environ.get("STELLA_CHATTERBOX_URL", "http://host.docker.internal:8123")
+            async with httpx.AsyncClient(timeout=60.0) as client:
+                r = await client.post(f"{url}/synthesize", json={"text": text})
+                r.raise_for_status()
+                return r.content or None
         proc = await asyncio.create_subprocess_exec(
-            self._cfg.piper_bin,
+            *shlex.split(self._cfg.piper_bin),
             "--model", str(self._model_path()),
             "--output-raw",
             stdin=asyncio.subprocess.PIPE,

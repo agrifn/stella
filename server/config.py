@@ -38,8 +38,9 @@ class TTSConfig:
     sample_rate: int = 22050
     # Directory holding <voice>.onnx and <voice>.onnx.json
     voices_dir: Path = field(default_factory=lambda: SERVER_DIR / "voices")
-    # Path to the piper binary (resolved from PATH if just "piper")
-    piper_bin: str = "piper"
+    # TTS engine command (piper1-gpl, the engine voices are trained/exported with).
+    # shlex-split, so a multi-token command like "python3 -m piper" works.
+    piper_bin: str = "python3 -m piper"
 
 
 @dataclass(frozen=True)
