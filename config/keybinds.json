@@ -405,6 +405,28 @@
         "destroy ship",
         "blow it up"
       ]
+    },
+    "evasive_maneuvers": {
+      "confirm_required": false,
+      "description": "Evasive maneuvers: boost power to shields and engines",
+      "examples": [
+        "evasive maneuvers",
+        "evade",
+        "evasive action",
+        "juke"
+      ],
+      "sequence": [
+        {
+          "key": "f7",
+          "hold": true,
+          "delay": 0.15
+        },
+        {
+          "key": "f6",
+          "hold": true,
+          "delay": 0.15
+        }
+      ]
     }
   }
 }

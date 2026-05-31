@@ -125,3 +125,22 @@ class KeybindExecutor:
         log.info("pressed %s%s", "+".join((*parsed.modifiers, parsed.key)),
                  " (held)" if hold else f" (x{parsed.taps})" if parsed.taps > 1 else "")
         return parsed
+
+    def execute_sequence(self, steps) -> None:
+        """Run a macro: an ordered list of steps (dicts or objects) with fields
+        key, hold, taps, delay. Each step presses its key, then waits `delay`."""
+        for i, step in enumerate(steps):
+            get = step.get if isinstance(step, dict) else (lambda k, d=None: getattr(step, k, d))
+            key = get("key")
+            if not key:
+                continue
+            hold = bool(get("hold", False))
+            taps = max(1, int(get("taps", 1) or 1))
+            delay = float(get("delay", 0.1) or 0.0)
+            if hold:
+                self.execute(key, hold=True)
+            else:
+                for _ in range(taps):
+                    self.execute(key, hold=False)
+            log.info("macro step %d: %s (hold=%s taps=%s)", i, key, hold, taps)
+            time.sleep(max(0.0, delay))

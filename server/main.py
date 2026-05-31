@@ -66,6 +66,7 @@ def _to_model(cmd: Command) -> CommandModel:
         key=cmd.key,
         confirm_required=cmd.confirm_required,
         hold=cmd.hold,
+        sequence=cmd.sequence,
         description=cmd.description,
         examples=cmd.examples,
     )
@@ -85,9 +86,10 @@ async def command(req: CommandRequest) -> CommandResponse:
         raise HTTPException(status_code=502, detail=f"LLM error: {e}") from e
 
     bind = registry.resolve(result.intent)
-    # Server is authoritative for keybind and the safety/confirm flag.
+    # Server is authoritative for keybind/macro and the safety/confirm flag.
     keybind = bind.key if bind else None
     hold = bind.hold if bind else False
+    sequence = bind.sequence if bind else []
     confirm_required = bind.confirm_required if bind else False
 
     audio_b64 = None
@@ -105,6 +107,7 @@ async def command(req: CommandRequest) -> CommandResponse:
         intent=result.intent,
         keybind=keybind,
         hold=hold,
+        sequence=sequence,
         confirm_required=confirm_required,
         response_text=result.response_text,
         audio=audio_b64,
@@ -165,6 +168,7 @@ async def create_command(cmd: CommandModel) -> CommandModel:
             key=cmd.key,
             confirm_required=cmd.confirm_required,
             hold=cmd.hold,
+            sequence=[s.model_dump() for s in cmd.sequence],
             description=cmd.description,
             examples=cmd.examples,
         ))

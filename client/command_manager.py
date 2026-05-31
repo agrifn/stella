@@ -67,6 +67,40 @@ def keyname_from_event(e) -> str | None:
     return "+".join(mods + [name])
 
 
+def parse_macro_line(line: str) -> dict | None:
+    """'f7 hold', 'h x3', 'tab /0.2', 'altleft+c' -> a macro step dict."""
+    toks = line.split()
+    if not toks:
+        return None
+    step = {"key": toks[0], "hold": False, "taps": 1, "delay": 0.1}
+    for t in toks[1:]:
+        tl = t.lower()
+        if tl == "hold":
+            step["hold"] = True
+        elif tl.startswith("x") and tl[1:].isdigit():
+            step["taps"] = int(tl[1:])
+        elif tl.startswith("/"):
+            try:
+                step["delay"] = float(tl[1:])
+            except ValueError:
+                pass
+    return step
+
+
+def macro_to_text(seq: list) -> str:
+    lines = []
+    for s in seq or []:
+        parts = [str(s.get("key", ""))]
+        if s.get("hold"):
+            parts.append("hold")
+        if int(s.get("taps", 1) or 1) > 1:
+            parts.append(f"x{int(s['taps'])}")
+        if abs(float(s.get("delay", 0.1) or 0) - 0.1) > 1e-9:
+            parts.append(f"/{s.get('delay')}")
+        lines.append(" ".join(parts))
+    return "\n".join(lines)
+
+
 class CaptureDialog(QDialog):
     """Captures one keypress and exposes it as `.result_key`."""
     def __init__(self, parent=None):
@@ -121,12 +155,19 @@ class CommandDialog(QDialog):
         self.examples.setPlaceholderText("Optional sample phrases, one per line")
         self.examples.setFixedHeight(80)
 
+        self.macro = QPlainTextEdit(macro_to_text(command.get("sequence", [])) if self.editing else "")
+        self.macro.setPlaceholderText(
+            "Macro (overrides Key): one step per line. e.g.\n"
+            "f7 hold\nf6 hold\nh x3\ntab /0.2")
+        self.macro.setFixedHeight(80)
+
         form.addRow("Intent:", self.intent)
         form.addRow("Key:", self._wrap(key_row))
         form.addRow("Description:", self.description)
         form.addRow("", self.confirm)
         form.addRow("", self.hold)
         form.addRow("Examples:", self.examples)
+        form.addRow("Macro:", self.macro)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
@@ -155,11 +196,14 @@ class CommandDialog(QDialog):
         self.accept()
 
     def data(self) -> dict:
+        sequence = [s for s in (parse_macro_line(ln.strip())
+                                for ln in self.macro.toPlainText().splitlines() if ln.strip()) if s]
         return {
             "intent": self.intent.text().strip(),
             "key": self.key.text().strip() or None,
             "confirm_required": self.confirm.isChecked(),
             "hold": self.hold.isChecked(),
+            "sequence": sequence,
             "description": self.description.text().strip(),
             "examples": [ln.strip() for ln in self.examples.toPlainText().splitlines() if ln.strip()],
         }
@@ -313,7 +357,8 @@ class MainWindow(QMainWindow):
         for c in cmds:
             r = self.table.rowCount()
             self.table.insertRow(r)
-            vals = [c["intent"], c.get("key") or "", "yes" if c["confirm_required"] else "",
+            key_disp = c.get("key") or (f"macro({len(c['sequence'])})" if c.get("sequence") else "")
+            vals = [c["intent"], key_disp, "yes" if c["confirm_required"] else "",
                     "yes" if c.get("hold") else "", c.get("description", "")]
             for col, v in enumerate(vals):
                 self.table.setItem(r, col, QTableWidgetItem(str(v)))
@@ -349,7 +394,7 @@ class MainWindow(QMainWindow):
         if not dlg.exec():
             return
         data = dlg.data()
-        patch = {k: data[k] for k in ("key", "confirm_required", "hold", "description", "examples")}
+        patch = {k: data[k] for k in ("key", "confirm_required", "hold", "sequence", "description", "examples")}
         try:
             self.api.update(intent, patch)
         except Exception as e:  # noqa: BLE001

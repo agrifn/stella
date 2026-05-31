@@ -116,8 +116,8 @@ class StellaEngine:
         self._emit("response", intent=res.intent, keybind=res.keybind,
                    confirm=res.confirm_required, text=res.response_text)
 
-        # No key (chat intent): just speak the reply in the background.
-        if not res.keybind:
+        # No action (chat intent): just speak the reply in the background.
+        if not res.keybind and not res.sequence:
             self._speak_async(res.response_text)
             return
 
@@ -161,8 +161,12 @@ class StellaEngine:
 
     def _execute(self, res):
         try:
-            self.executor.execute(res.keybind, hold=res.hold)
-            self._emit("executed", intent=res.intent, keybind=res.keybind)
+            if res.sequence:
+                self.executor.execute_sequence(res.sequence)
+                self._emit("executed", intent=res.intent, keybind=f"macro({len(res.sequence)} steps)")
+            else:
+                self.executor.execute(res.keybind, hold=res.hold)
+                self._emit("executed", intent=res.intent, keybind=res.keybind)
         except Exception as e:  # noqa: BLE001
             self._emit("error", text=f"exec error: {e}")
 

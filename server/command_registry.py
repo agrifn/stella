@@ -34,6 +34,10 @@ class Command:
     hold: bool = False
     description: str = ""
     examples: list[str] = field(default_factory=list)
+    # Macro: an ordered list of steps to run instead of a single key. Each step:
+    # {"key": "f7", "hold": false, "taps": 1, "delay": 0.1}. When non-empty, this
+    # command is a macro and `key` is ignored.
+    sequence: list[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         d: dict = {"key": self.key, "confirm_required": self.confirm_required}
@@ -42,6 +46,8 @@ class Command:
         d["description"] = self.description
         if self.examples:
             d["examples"] = list(self.examples)
+        if self.sequence:
+            d["sequence"] = [dict(s) for s in self.sequence]
         return d
 
     @staticmethod
@@ -53,6 +59,7 @@ class Command:
             hold=bool(spec.get("hold", False)),
             description=spec.get("description", ""),
             examples=list(spec.get("examples", []) or []),
+            sequence=list(spec.get("sequence", []) or []),
         )
 
 
