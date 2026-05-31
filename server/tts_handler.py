@@ -81,15 +81,27 @@ class TTSHandler:
         log.info("active voice set to %s", voice)
 
     async def download_voice(self, voice: str) -> None:
-        """Fetch a Piper voice (.onnx + .onnx.json) by name into the voices dir."""
+        """Fetch a Piper voice (.onnx + .onnx.json) by name into the voices dir.
+
+        Both files are written to temp paths and only committed once BOTH succeed,
+        so a mid-download failure never leaves a half-installed (unusable) voice.
+        """
         self._dir.mkdir(parents=True, exist_ok=True)
-        async with httpx.AsyncClient(timeout=120.0, follow_redirects=True) as client:
-            for suffix in ("", ".json"):
-                url = _voice_url(voice, suffix)
-                dest = self._dir / f"{voice}.onnx{suffix}"
-                r = await client.get(url)
-                r.raise_for_status()
-                dest.write_bytes(r.content)
+        tmp: dict[str, Path] = {}
+        try:
+            async with httpx.AsyncClient(timeout=120.0, follow_redirects=True) as client:
+                for suffix in ("", ".json"):
+                    r = await client.get(_voice_url(voice, suffix))
+                    r.raise_for_status()
+                    t = self._dir / f"{voice}.onnx{suffix}.part"
+                    t.write_bytes(r.content)
+                    tmp[suffix] = t
+        except Exception:
+            for t in tmp.values():
+                t.unlink(missing_ok=True)
+            raise
+        for suffix, t in tmp.items():
+            t.replace(self._dir / f"{voice}.onnx{suffix}")
         log.info("downloaded voice %s", voice)
 
     # -- synthesis --------------------------------------------------------

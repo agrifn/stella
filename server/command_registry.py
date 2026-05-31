@@ -130,8 +130,10 @@ class CommandRegistry:
             if intent not in self._commands:
                 raise CommandError(f"command '{intent}' not found")
             cmd = self._commands[intent]
+            # Only fields the caller actually sent reach here (exclude_unset), so
+            # apply them as-is - including None/[] to deliberately clear a value.
             for k, v in fields.items():
-                if v is not None and hasattr(cmd, k) and k != "intent":
+                if hasattr(cmd, k) and k != "intent":
                     setattr(cmd, k, v)
             self._persist()
             return cmd

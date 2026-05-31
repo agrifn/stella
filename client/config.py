@@ -20,8 +20,8 @@ class ClientConfig:
     # resolves to IPv6 ::1 first, which WSL2's port-forward ignores, causing a
     # ~21s connection timeout per new connection.
     server_url: str = "http://127.0.0.1:8420"
-    ptt_key: str = "scroll lock"
-    mode_toggle_key: str = "f8"
+    ptt_key: str = "right ctrl"
+    mode_toggle_key: str = "ctrl+alt+m"   # avoid F-keys: many are SC bindings (F8=reset_power)
     default_mode: str = "COMMAND"
     whisper_model: str = "small"
     whisper_device: str = "cuda"
@@ -31,10 +31,11 @@ class ClientConfig:
     output_device: int | None = None  # None = system default speakers/headset
     execute_keys: bool = True        # actually press keys (False = dry-run / log only)
     hold_duration: float = 1.5       # seconds to hold a 'hold' key (e.g. self destruct)
-    # CHAT mode: how to drive Star Citizen's text chat
-    chat_open_key: str = "enter"     # key that opens the SC chat box
-    chat_send_key: str = "enter"     # key that sends the message
-    chat_open_delay: float = 0.15    # pause after opening chat before typing
+    # CHAT mode: by default just type at the cursor and press Enter (the user
+    # opens/focuses chat themselves). Set chat_open_key (e.g. "f12") to auto-open.
+    chat_open_key: str = ""          # empty = don't open a chat box, just type
+    chat_send_key: str = "enter"     # key that sends the message ("" = don't send)
+    chat_open_delay: float = 0.25    # settle pause before typing (avoids dropped 1st char)
     # Overlay HUD
     overlay_corner: str = "top-left"  # top-left | top-right | bottom-left | bottom-right
     overlay_opacity: float = 0.85
