@@ -62,6 +62,12 @@ class StellaEngine:
                                  cfg.chat_open_delay, enabled=do_exec)
         self.recorder = PTTRecorder(cfg.ptt_key, cfg.samplerate, cfg.input_device)
 
+        # Wake/sleep: when asleep, PTT utterances are ignored until woken.
+        self.active = not cfg.start_asleep
+        self._auto_sleep = cfg.auto_sleep_seconds
+        self._wake_key = cfg.wake_key
+        self._last_activity = time.time()
+
     # -- events -----------------------------------------------------------
     def _emit(self, name: str, **data):
         try:
@@ -73,6 +79,34 @@ class StellaEngine:
     def toggle_mode(self):
         self.mode = "CHAT" if self.mode == "COMMAND" else "COMMAND"
         self._emit("mode", mode=self.mode)
+
+    # -- wake / sleep -----------------------------------------------------
+    def wake(self):
+        self._last_activity = time.time()
+        if not self.active:
+            self.active = True
+            self._emit("wake_state", active=True)
+            self._emit("status", text="awake")
+            log.info("STELLA awake")
+
+    def sleep(self):
+        if self.active:
+            self.active = False
+            self._emit("wake_state", active=False)
+            self._emit("status", text=f"asleep - {self._wake_key} to wake")
+            log.info("STELLA asleep")
+
+    def toggle_wake(self):
+        self.sleep() if self.active else self.wake()
+
+    def _auto_sleep_loop(self, should_stop):
+        """Background watchdog: return to sleep after a stretch of inactivity."""
+        while not should_stop():
+            time.sleep(5)
+            if (self.active and self._auto_sleep > 0
+                    and time.time() - self._last_activity > self._auto_sleep):
+                log.info("auto-sleep after %ds idle", self._auto_sleep)
+                self.sleep()
 
     def warm(self):
         self._emit("status", text="warming speech model...")
@@ -89,7 +123,8 @@ class StellaEngine:
         if self.executor.enabled and not is_admin():
             self._emit("status", text="WARNING: not admin - keys may not reach Star Citizen")
         self._emit("mode", mode=self.mode)
-        self._emit("status", text="ready")
+        self._emit("wake_state", active=self.active)
+        self._emit("status", text="ready" if self.active else f"asleep - {self._wake_key} to wake")
 
     # -- one utterance ----------------------------------------------------
     # Gate out accidental PTT taps and (near-)silence before STT, so Whisper
@@ -98,6 +133,10 @@ class StellaEngine:
     _MIN_RMS = 0.006
 
     def process(self, audio):
+        # Asleep: ignore PTT entirely (wake via hotkey/tray/wake-word first).
+        if not self.active:
+            return
+        self._last_activity = time.time()
         t0 = time.time()
         dur = len(audio) / self.stt.samplerate
         rms = float(np.sqrt(np.mean(np.square(audio)))) if len(audio) else 0.0
@@ -187,6 +226,9 @@ class StellaEngine:
     # -- main loop --------------------------------------------------------
     def run(self, should_stop):
         self.recorder.open()
+        if self._auto_sleep > 0:
+            threading.Thread(target=self._auto_sleep_loop, args=(should_stop,),
+                             daemon=True).start()
         try:
             while not should_stop():
                 audio = self.recorder.record_once(

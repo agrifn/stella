@@ -38,6 +38,12 @@
     "chat_open_key": "",
     "chat_send_key": "enter",
     "chat_open_delay": 0.25,
+    "start_asleep": true,
+    "wake_key": "ctrl+alt+s",
+    "auto_sleep_seconds": 300,
+    "wake_word_enabled": false,
+    "wake_word_model": "",
+    "wake_word_threshold": 0.5,
     "overlay_corner": "top-left",
     "overlay_opacity": 0.85,
     "overlay_margin": 24

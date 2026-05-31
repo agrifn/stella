@@ -36,6 +36,15 @@ class ClientConfig:
     chat_open_key: str = ""          # empty = don't open a chat box, just type
     chat_send_key: str = "enter"     # key that sends the message ("" = don't send)
     chat_open_delay: float = 0.25    # settle pause before typing (avoids dropped 1st char)
+    # Wake / sleep: when asleep STELLA ignores PTT until woken (so it's not "fully
+    # running"). Wake via the hotkey (toggles sleep), the tray menu, or - once
+    # configured - a spoken wake word. It auto-sleeps after inactivity.
+    start_asleep: bool = True            # launch dormant; warm the models then sleep
+    wake_key: str = "ctrl+alt+s"         # global hotkey that toggles wake/sleep
+    auto_sleep_seconds: int = 300        # sleep after this many idle seconds (0 = never)
+    wake_word_enabled: bool = False      # spoken wake word (needs a model; see wake_word_model)
+    wake_word_model: str = ""            # path to the openWakeWord 'stella' model (.onnx/.tflite)
+    wake_word_threshold: float = 0.5     # detection confidence 0-1
     # Overlay HUD
     overlay_corner: str = "top-left"  # top-left | top-right | bottom-left | bottom-right
     overlay_opacity: float = 0.85
@@ -65,6 +74,12 @@ def load_client_config(settings_path: Path | None = None) -> ClientConfig:
         chat_open_key=client.get("chat_open_key", ClientConfig.chat_open_key),
         chat_send_key=client.get("chat_send_key", ClientConfig.chat_send_key),
         chat_open_delay=float(client.get("chat_open_delay", ClientConfig.chat_open_delay)),
+        start_asleep=bool(client.get("start_asleep", ClientConfig.start_asleep)),
+        wake_key=client.get("wake_key", ClientConfig.wake_key),
+        auto_sleep_seconds=int(client.get("auto_sleep_seconds", ClientConfig.auto_sleep_seconds)),
+        wake_word_enabled=bool(client.get("wake_word_enabled", ClientConfig.wake_word_enabled)),
+        wake_word_model=client.get("wake_word_model", ClientConfig.wake_word_model),
+        wake_word_threshold=float(client.get("wake_word_threshold", ClientConfig.wake_word_threshold)),
         overlay_corner=client.get("overlay_corner", ClientConfig.overlay_corner),
         overlay_opacity=float(client.get("overlay_opacity", ClientConfig.overlay_opacity)),
         overlay_margin=int(client.get("overlay_margin", ClientConfig.overlay_margin)),

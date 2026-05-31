@@ -22,6 +22,7 @@ class Overlay(QWidget):
         super().__init__()
         self._corner = corner
         self._margin = margin
+        self._opacity = opacity
 
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
@@ -46,13 +47,16 @@ class Overlay(QWidget):
 
         # header: title + mode badge + listening dot
         header = QHBoxLayout()
-        title = QLabel("STELLA")
-        title.setObjectName("title")
+        self.title = QLabel("STELLA")
+        self.title.setObjectName("title")
+        self.state_label = QLabel("")
+        self.state_label.setObjectName("state")
         self.mode_label = QLabel("COMMAND")
         self.mode_label.setObjectName("mode")
         self.dot = QLabel("●")  # filled circle
         self.dot.setObjectName("dot")
-        header.addWidget(title)
+        header.addWidget(self.title)
+        header.addWidget(self.state_label)
         header.addStretch(1)
         header.addWidget(self.dot)
         header.addWidget(self.mode_label)
@@ -73,6 +77,7 @@ class Overlay(QWidget):
             #panel { background: rgba(12,16,24,235); border: 1px solid rgba(120,150,200,90);
                      border-radius: 12px; }
             #title { color: #cfe3ff; font-size: 16px; font-weight: 700; letter-spacing: 2px; }
+            #state { color: #6b7689; font-size: 11px; font-weight: 700; letter-spacing: 1px; }
             #mode  { color: #39d98a; font-size: 12px; font-weight: 700; }
             #dot   { color: #444b5a; font-size: 12px; }
             #status { color: #7f8aa3; font-size: 11px; }
@@ -100,6 +105,13 @@ class Overlay(QWidget):
         self.mode_label.setText(mode)
         color = _MODE_COLORS.get(mode, "#cccccc")
         self.mode_label.setStyleSheet(f"color: {color};")
+
+    def set_active(self, active: bool):
+        """Dim the panel and show a SLEEP badge when STELLA is dormant."""
+        self.setWindowOpacity(self._opacity if active else self._opacity * 0.55)
+        self.title.setStyleSheet("color: #cfe3ff;" if active else "color: #6b7689;")
+        self.state_label.setText("" if active else "· SLEEP")
+        self.position()
 
     def _set_dot(self, listening: bool):
         self.dot.setStyleSheet(f"color: {'#ff5d5d' if listening else '#444b5a'};")

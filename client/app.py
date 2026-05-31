@@ -36,12 +36,15 @@ class Bridge(QObject):
     listening = pyqtSignal(bool)
     transcript = pyqtSignal(str)
     response = pyqtSignal(str, str)  # intent, text
+    wake_state = pyqtSignal(bool)    # awake / asleep
 
     def on_event(self, name: str, data: dict):
         if name == "status":
             self.status.emit(data.get("text", ""))
         elif name == "mode":
             self.mode.emit(data.get("mode", ""))
+        elif name == "wake_state":
+            self.wake_state.emit(bool(data.get("active")))
         elif name == "listening":
             self.listening.emit(bool(data.get("on")))
         elif name == "transcript":
@@ -105,6 +108,7 @@ def main(argv=None):
     bridge.listening.connect(overlay.set_listening)
     bridge.transcript.connect(overlay.set_transcript)
     bridge.response.connect(overlay.set_response)
+    bridge.wake_state.connect(overlay.set_active)
 
     state = {"stop": False, "engine": None}
 
@@ -115,6 +119,7 @@ def main(argv=None):
                                   execute_keys=False if args.dry_run else None)
             state["engine"] = engine
             keyboard.add_hotkey(cfg.mode_toggle_key, engine.toggle_mode)
+            keyboard.add_hotkey(cfg.wake_key, engine.toggle_wake)  # button to wake/sleep
             engine.warm()
             engine.run(should_stop=lambda: state["stop"])
         except Exception as e:  # noqa: BLE001 - surface fatal startup/loop errors
@@ -130,10 +135,13 @@ def main(argv=None):
     tray = QSystemTrayIcon(_make_icon())
     tray.setToolTip("STELLA")
     menu = QMenu()
+    act_wake = QAction("Wake / Sleep", menu)
+    act_wake.triggered.connect(lambda: state["engine"] and state["engine"].toggle_wake())
     act_toggle = QAction("Toggle CHAT/COMMAND", menu)
     act_toggle.triggered.connect(lambda: state["engine"] and state["engine"].toggle_mode())
     act_quit = QAction("Quit STELLA", menu)
     act_quit.triggered.connect(quit_app)
+    menu.addAction(act_wake)
     menu.addAction(act_toggle)
     menu.addSeparator()
     menu.addAction(act_quit)
