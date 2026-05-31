@@ -18,7 +18,7 @@ class CommandResult:
     confirm_required: bool
     response_text: str
     audio_b64: Optional[str]
-    sequence: list = None  # macro steps (list of dicts), or empty
+    sequence: Optional[list] = None  # macro steps (list of dicts), or empty
 
 
 class CommandSender:

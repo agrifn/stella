@@ -1,8 +1,6 @@
 """Client for the server's /commands CRUD API (used by the GUI)."""
 from __future__ import annotations
 
-from typing import Optional
-
 import requests
 
 
