@@ -41,7 +41,8 @@ class ClientConfig:
     # configured - a spoken wake word. It auto-sleeps after inactivity.
     start_asleep: bool = True            # launch dormant; warm the models then sleep
     wake_key: str = "ctrl+alt+s"         # global hotkey that toggles wake/sleep
-    auto_sleep_seconds: int = 300        # sleep after this many idle seconds (0 = never)
+    auto_sleep_enabled: bool = True      # if False, stays awake until manually slept (toggle in tray)
+    auto_sleep_seconds: int = 300        # when enabled, sleep after this many idle seconds
     wake_word_enabled: bool = False      # spoken wake word (needs a model; see wake_word_model)
     wake_word_model: str = ""            # path to the openWakeWord 'stella' model (.onnx/.tflite)
     wake_word_threshold: float = 0.5     # detection confidence 0-1
@@ -76,6 +77,7 @@ def load_client_config(settings_path: Path | None = None) -> ClientConfig:
         chat_open_delay=float(client.get("chat_open_delay", ClientConfig.chat_open_delay)),
         start_asleep=bool(client.get("start_asleep", ClientConfig.start_asleep)),
         wake_key=client.get("wake_key", ClientConfig.wake_key),
+        auto_sleep_enabled=bool(client.get("auto_sleep_enabled", ClientConfig.auto_sleep_enabled)),
         auto_sleep_seconds=int(client.get("auto_sleep_seconds", ClientConfig.auto_sleep_seconds)),
         wake_word_enabled=bool(client.get("wake_word_enabled", ClientConfig.wake_word_enabled)),
         wake_word_model=client.get("wake_word_model", ClientConfig.wake_word_model),

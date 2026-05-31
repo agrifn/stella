@@ -40,6 +40,7 @@
     "chat_open_delay": 0.25,
     "start_asleep": true,
     "wake_key": "ctrl+alt+s",
+    "auto_sleep_enabled": true,
     "auto_sleep_seconds": 300,
     "wake_word_enabled": false,
     "wake_word_model": "",

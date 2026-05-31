@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import ctypes
 import logging
+import os
 import re
 import threading
 import time
@@ -65,8 +66,23 @@ class StellaEngine:
         # Wake/sleep: when asleep, PTT utterances are ignored until woken.
         self.active = not cfg.start_asleep
         self._auto_sleep = cfg.auto_sleep_seconds
+        self._auto_sleep_enabled = cfg.auto_sleep_enabled
         self._wake_key = cfg.wake_key
         self._last_activity = time.time()
+
+        # Optional spoken wake word: a tiny model that taps the mic stream and
+        # wakes STELLA. Only built if enabled and a model file is present.
+        self._wake_listener = None
+        if cfg.wake_word_enabled and cfg.wake_word_model and os.path.exists(cfg.wake_word_model):
+            try:
+                from .wake_word import WakeWordListener
+                self._wake_listener = WakeWordListener(
+                    cfg.wake_word_model, cfg.wake_word_threshold, cfg.samplerate,
+                    on_wake=self._on_wake_word)
+                self._wake_listener.set_enabled(not self.active)  # listen only while asleep
+                self.recorder.set_monitor(self._wake_listener.feed)
+            except Exception:  # noqa: BLE001
+                log.exception("wake-word listener init failed; continuing without it")
 
     # -- events -----------------------------------------------------------
     def _emit(self, name: str, **data):
@@ -85,6 +101,8 @@ class StellaEngine:
         self._last_activity = time.time()
         if not self.active:
             self.active = True
+            if self._wake_listener:
+                self._wake_listener.set_enabled(False)  # no need to listen for the word while awake
             self._emit("wake_state", active=True)
             self._emit("status", text="awake")
             log.info("STELLA awake")
@@ -92,6 +110,8 @@ class StellaEngine:
     def sleep(self):
         if self.active:
             self.active = False
+            if self._wake_listener:
+                self._wake_listener.set_enabled(True)  # resume listening for the wake word
             self._emit("wake_state", active=False)
             self._emit("status", text=f"asleep - {self._wake_key} to wake")
             log.info("STELLA asleep")
@@ -99,11 +119,23 @@ class StellaEngine:
     def toggle_wake(self):
         self.sleep() if self.active else self.wake()
 
+    def set_auto_sleep(self, on: bool):
+        """Enable/disable the idle auto-sleep watchdog at runtime (tray toggle)."""
+        self._auto_sleep_enabled = bool(on)
+        self._last_activity = time.time()  # don't let re-enabling sleep us instantly
+        self._emit("status", text=f"auto-sleep {'on' if on else 'off'}")
+        log.info("auto-sleep %s", "on" if on else "off")
+
+    def _on_wake_word(self):
+        if not self.active:
+            log.info("wake word -> waking")
+            self.wake()
+
     def _auto_sleep_loop(self, should_stop):
         """Background watchdog: return to sleep after a stretch of inactivity."""
         while not should_stop():
             time.sleep(5)
-            if (self.active and self._auto_sleep > 0
+            if (self.active and self._auto_sleep_enabled and self._auto_sleep > 0
                     and time.time() - self._last_activity > self._auto_sleep):
                 log.info("auto-sleep after %ds idle", self._auto_sleep)
                 self.sleep()

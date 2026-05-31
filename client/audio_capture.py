@@ -30,11 +30,22 @@ class PTTRecorder:
         self._frames: list[np.ndarray] = []
         self._recording = threading.Event()
         self._stream: Optional[sd.InputStream] = None
+        self._monitor: Optional[Callable] = None  # always-on tap (e.g. wake-word listener)
+
+    def set_monitor(self, fn: Optional[Callable]) -> None:
+        """Register a callback fed EVERY capture block (regardless of PTT state),
+        so a wake-word listener can share this single mic stream."""
+        self._monitor = fn
 
     # -- stream lifecycle -------------------------------------------------
     def _callback(self, indata, frames, time_info, status):  # noqa: ANN001
         if status:
             log.debug("audio status: %s", status)
+        if self._monitor is not None:
+            try:
+                self._monitor(indata)
+            except Exception:  # noqa: BLE001 - a monitor error must not break capture
+                log.exception("audio monitor error")
         if self._recording.is_set():
             self._frames.append(indata.copy())
 
