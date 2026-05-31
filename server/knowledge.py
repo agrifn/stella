@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 
 import httpx
 
@@ -95,22 +96,45 @@ class KnowledgeHandler:
 
     # -- matching ---------------------------------------------------------
     def match(self, text: str) -> dict | None:
-        """Find the ship whose name best appears in the text. Prefers specific
-        (longer) names so 'guardian mx' beats the base 'guardian'."""
+        """Resolve a ship from the (messy STT) text. Two tiers:
+        1) the full ship name appears in the text ('guardian mx' -> 'Guardian MX'),
+           preferring the most specific (longest) full match;
+        2) token coverage - the ship's distinctive name words appear in the text
+           ('hornet' -> 'F7C Hornet'), preferring the most-covered / most-base name.
+        """
         if not self._ships or fuzz is None:
             return None
         tl = text.lower()
+        words = set(re.findall(r"[a-z0-9]+", tl))
+
+        # Tier 1: whole name present in the speech.
         best, best_adj = None, 0.0
         for s in self._ships:
             name = (s.get("name") or "").lower()
             if not name:
                 continue
             score = fuzz.partial_ratio(name, tl)
-            if score < 82:
+            if score >= 88:
+                adj = score + min(len(name), 30) * 0.4  # specificity bonus
+                if adj > best_adj:
+                    best, best_adj = s, adj
+        if best:
+            return best
+
+        # Tier 2: distinctive name tokens (len>=3) covered by the spoken words.
+        best, best_score = None, 0.0
+        for s in self._ships:
+            ntoks = [t for t in re.findall(r"[a-z0-9]+", (s.get("name") or "").lower())
+                     if len(t) >= 3]
+            if not ntoks:
                 continue
-            adj = score + min(len(name), 30) * 0.4  # specificity bonus
-            if adj > best_adj:
-                best, best_adj = s, adj
+            matched = sum(1 for t in ntoks if any(fuzz.ratio(t, w) >= 86 for w in words))
+            coverage = matched / len(ntoks)
+            if matched >= 1 and coverage >= 0.5:
+                # prefer higher coverage; tie-break toward fewer-token (more base) names
+                score = coverage * 100 - len(ntoks)
+                if score > best_score:
+                    best, best_score = s, score
         return best
 
     # -- answer -----------------------------------------------------------

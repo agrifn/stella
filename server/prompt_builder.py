@@ -37,10 +37,15 @@ class PromptBuilder:
                 hints = "  e.g. " + ", ".join(f'"{p}"' for p in cmd.examples[:4])
             lines.append(f"- {cmd.intent}: {desc}{danger}{hints}")
         if knowledge_enabled:
-            lines.append('- ship_info: the pilot asks a factual question about a SHIP/vehicle '
-                         "(armor, shields, hull, speed, cargo, crew, mass, manufacturer)  "
-                         'e.g. "what is the guardian MX armor", "how fast is a gladius", '
-                         '"cargo capacity of a freelancer"')
+            lines.append('- ship_info: the pilot asks ABOUT a specific named SHIP/vehicle '
+                         "(its armor, shields, hull, speed, cargo, crew, mass, manufacturer). "
+                         "If a ship NAME is present, this wins over a power command even when a "
+                         'word like "shields" or "power" appears.  e.g. "what is the guardian MX '
+                         'armor", "how fast is a gladius", "cutlass black shields", "300i cargo"')
         lines.append('- chat: not a ship command or ship question; general conversation')
         lines += ["", "Examples:", *_FORMAT_EXAMPLES]
+        if knowledge_enabled:
+            lines.append(
+                'Input: "cutlass black shields"\n'
+                'Output: {"intent":"ship_info","confirm_required":false,"response_text":""}')
         return "\n".join(lines)
