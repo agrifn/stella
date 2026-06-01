@@ -10,7 +10,7 @@
     "ollama_url": "http://127.0.0.1:11434",
     "model": "llama3.2:3b",
     "temperature": 0.0,
-    "num_ctx": 2048,
+    "num_ctx": 4096,
     "keep_alive": "24h",
     "base_url": null,
     "api_key": null

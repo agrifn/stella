@@ -24,7 +24,11 @@ class LLMConfig:
     ollama_url: str = "http://127.0.0.1:11434"
     model: str = "llama3.2:3b"
     temperature: float = 0.0
-    num_ctx: int = 2048
+    # 4096 (not 2048): the system prompt (37 commands + knowledge intents/examples)
+    # is ~2050 tokens, which overflowed a 2048 context and made Ollama TRUNCATE the
+    # prompt -> the model lost command definitions and misclassified. Must be the SAME
+    # value on every Ollama call (the provider pins it) or the model reloads.
+    num_ctx: int = 4096
     # config/settings.json sets this to "24h" on purpose: keeping the model resident
     # avoids multi-second cold reloads. This 30m fallback only applies with no settings.
     keep_alive: str = "30m"
