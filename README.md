@@ -114,3 +114,15 @@ config/   keybinds.json, settings.json
 docs/     setup.md
 docker-compose.yml   start_stella.bat   start_manager.bat
 ```
+
+## License
+
+MIT, see [LICENSE](LICENSE). Free to use, modify, and share, with no warranty.
+
+## Disclaimer
+
+A personal hobby project, provided as is. STELLA sends synthetic keystrokes (the same
+VoiceAttack-style SendInput approach the Star Citizen community runs under Easy
+Anti-Cheat). That has worked in practice, but anti-cheat behavior can change at any
+time and is outside this project's control, so use at your own risk and test in a safe
+situation first. Not affiliated with Cloud Imperium Games or Roberts Space Industries.
