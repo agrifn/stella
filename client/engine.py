@@ -262,7 +262,8 @@ class StellaEngine:
                 if res.sequence:
                     self.executor.execute_sequence(res.sequence)
                 else:
-                    self.executor.execute(res.keybind, hold=res.hold)
+                    self.executor.execute(res.keybind, hold=res.hold,
+                                          duration=res.hold_duration)
                 if i + 1 < count:
                     time.sleep(0.12)  # brief gap so rapid repeats register as separate presses
             label = f"macro({len(res.sequence)} steps)" if res.sequence else res.keybind

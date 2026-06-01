@@ -91,6 +91,7 @@ def _to_model(cmd: Command) -> CommandModel:
         key=cmd.key,
         confirm_required=cmd.confirm_required,
         hold=cmd.hold,
+        hold_duration=cmd.hold_duration,
         sequence=cmd.sequence,
         description=cmd.description,
         examples=cmd.examples,
@@ -120,6 +121,7 @@ async def command(req: CommandRequest) -> CommandResponse:
     # Server is authoritative for keybind/macro and the safety/confirm flag.
     keybind = bind.key if bind else None
     hold = bind.hold if bind else False
+    hold_duration = bind.hold_duration if bind else None
     sequence = bind.sequence if bind else []
     confirm_required = bind.confirm_required if bind else False
 
@@ -138,6 +140,7 @@ async def command(req: CommandRequest) -> CommandResponse:
         intent=result.intent,
         keybind=keybind,
         hold=hold,
+        hold_duration=hold_duration,
         sequence=sequence,
         confirm_required=confirm_required,
         response_text=result.response_text,
@@ -196,6 +199,7 @@ async def create_command(cmd: CommandModel) -> CommandModel:
             key=cmd.key,
             confirm_required=cmd.confirm_required,
             hold=cmd.hold,
+            hold_duration=cmd.hold_duration,
             sequence=[s.model_dump() for s in cmd.sequence],
             description=cmd.description,
             examples=cmd.examples,

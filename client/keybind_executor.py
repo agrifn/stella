@@ -96,13 +96,18 @@ class KeybindExecutor:
             self._pdi = pydirectinput
         return self._pdi
 
-    def execute(self, keybind: str, hold: bool = False) -> ParsedKeybind:
-        """Send the keystroke. Returns the parsed keybind (for logging/tests)."""
+    def execute(self, keybind: str, hold: bool = False,
+                duration: float | None = None) -> ParsedKeybind:
+        """Send the keystroke. Returns the parsed keybind (for logging/tests).
+
+        `duration` overrides the global hold time for this press (power 'set to
+        max/min' want ~0.25s; eject keeps the long default)."""
         parsed = parse_keybind(keybind)
+        hold_for = duration if duration is not None else self.hold_duration
         if not self.enabled:
             log.info("[dry-run] would press %s%s",
                      "+".join((*parsed.modifiers, parsed.key)),
-                     " (hold)" if hold else "")
+                     f" (hold {hold_for:.2f}s)" if hold else "")
             return parsed
 
         pdi = self._backend()
@@ -111,7 +116,7 @@ class KeybindExecutor:
         try:
             if hold:
                 pdi.keyDown(parsed.key)
-                time.sleep(self.hold_duration)
+                time.sleep(hold_for)
                 pdi.keyUp(parsed.key)
             elif parsed.taps > 1:
                 for _ in range(parsed.taps):

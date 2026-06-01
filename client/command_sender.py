@@ -19,6 +19,7 @@ class CommandResult:
     response_text: str
     audio_b64: Optional[str]
     sequence: Optional[list] = None  # macro steps (list of dicts), or empty
+    hold_duration: Optional[float] = None  # seconds to hold (None = client default)
 
 
 class CommandSender:
@@ -49,6 +50,7 @@ class CommandSender:
             response_text=d.get("response_text", ""),
             audio_b64=d.get("audio"),
             sequence=d.get("sequence") or [],
+            hold_duration=d.get("hold_duration"),
         )
 
     def speak(self, text: str, route: str = "chat") -> Optional[str]:

@@ -32,6 +32,10 @@ class Command:
     key: Optional[str] = None
     confirm_required: bool = False
     hold: bool = False
+    # Seconds to hold the key when hold=True. None -> use the client's global default
+    # (eject's long safety hold). Power "set to max/min" set this to ~0.25 so the key
+    # is held just long enough to register the extreme without sitting on the action path.
+    hold_duration: Optional[float] = None
     description: str = ""
     examples: list[str] = field(default_factory=list)
     # Macro: an ordered list of steps to run instead of a single key. Each step:
@@ -43,6 +47,8 @@ class Command:
         d: dict = {"key": self.key, "confirm_required": self.confirm_required}
         if self.hold:
             d["hold"] = True
+        if self.hold_duration is not None:
+            d["hold_duration"] = self.hold_duration
         d["description"] = self.description
         if self.examples:
             d["examples"] = list(self.examples)
@@ -57,6 +63,7 @@ class Command:
             key=spec.get("key"),
             confirm_required=bool(spec.get("confirm_required", False)),
             hold=bool(spec.get("hold", False)),
+            hold_duration=spec.get("hold_duration"),
             description=spec.get("description", ""),
             examples=list(spec.get("examples", []) or []),
             sequence=list(spec.get("sequence", []) or []),

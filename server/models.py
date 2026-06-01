@@ -44,6 +44,7 @@ class CommandResponse(BaseModel):
     intent: str
     keybind: Optional[str] = None
     hold: bool = Field(False, description="Hold the key rather than tap it (e.g. self destruct)")
+    hold_duration: Optional[float] = Field(None, description="Seconds to hold (None = client default)")
     sequence: list[MacroStep] = Field(default_factory=list, description="Macro steps (if any)")
     confirm_required: bool = False
     response_text: str = ""
@@ -68,6 +69,7 @@ class CommandModel(BaseModel):
     key: Optional[str] = Field(None, description="pydirectinput key or combo, e.g. '0', 'alt+y'")
     confirm_required: bool = False
     hold: bool = Field(False, description="Hold the key rather than tap it")
+    hold_duration: Optional[float] = Field(None, description="Seconds to hold (None = client default)")
     sequence: list[MacroStep] = Field(default_factory=list, description="Macro steps (overrides key)")
     description: str = Field("", description="What this command does (shown to the LLM)")
     examples: list[str] = Field(default_factory=list, description="Sample phrases for the LLM")
@@ -87,6 +89,7 @@ class CommandUpdate(BaseModel):
     key: Optional[str] = None
     confirm_required: Optional[bool] = None
     hold: Optional[bool] = None
+    hold_duration: Optional[float] = None
     sequence: Optional[list[MacroStep]] = None
     description: Optional[str] = None
     examples: Optional[list[str]] = None

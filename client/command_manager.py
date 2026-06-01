@@ -116,6 +116,10 @@ class CommandDialog(QDialog):
         self.description.setPlaceholderText("What it does (shown to the AI)")
         self.confirm = QCheckBox("Require spoken confirmation (dangerous)")
         self.hold = QCheckBox("Hold the key instead of tapping")
+        hd = command.get("hold_duration") if self.editing else None
+        self.hold_duration = QLineEdit("" if hd is None else str(hd))
+        self.hold_duration.setPlaceholderText(
+            "Hold seconds (blank = default ~1.5s). Power max/min use ~0.25; eject leaves blank.")
         if self.editing:
             self.confirm.setChecked(bool(command.get("confirm_required")))
             self.hold.setChecked(bool(command.get("hold")))
@@ -152,6 +156,7 @@ class CommandDialog(QDialog):
         form.addRow("Description:", self.description)
         form.addRow("", self.confirm)
         form.addRow("", self.hold)
+        form.addRow("Hold seconds:", self.hold_duration)
         form.addRow("Phrases you say:", self.examples)
         form.addRow("", phrases_help)
         form.addRow("Macro:", self.macro)
@@ -186,11 +191,17 @@ class CommandDialog(QDialog):
     def data(self) -> dict:
         sequence = [s for s in (parse_macro_line(ln.strip())
                                 for ln in self.macro.toPlainText().splitlines() if ln.strip()) if s]
+        hd_text = self.hold_duration.text().strip()
+        try:
+            hold_duration = float(hd_text) if hd_text else None
+        except ValueError:
+            hold_duration = None
         return {
             "intent": self.intent.text().strip(),
             "key": self.key.text().strip() or None,
             "confirm_required": self.confirm.isChecked(),
             "hold": self.hold.isChecked(),
+            "hold_duration": hold_duration,
             "sequence": sequence,
             "description": self.description.text().strip(),
             "examples": [ln.strip() for ln in self.examples.toPlainText().splitlines() if ln.strip()],
