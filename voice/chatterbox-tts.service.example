@@ -1,0 +1,27 @@
+# Example systemd unit for the optional Chatterbox TTS service.
+# Copy to /etc/systemd/system/chatterbox-tts.service, EDIT the paths/user/env,
+# then: sudo systemctl daemon-reload && sudo systemctl enable --now chatterbox-tts
+#
+# Replace YOUR_USER and the paths. CB_REF is optional: set it to your own reference
+# audio to clone a voice (see voice/README.md for the legal/privacy notice), or
+# leave it unset to use the Chatterbox default voice.
+
+[Unit]
+Description=Chatterbox TTS service for STELLA
+After=network.target
+
+[Service]
+Type=simple
+User=YOUR_USER
+WorkingDirectory=/opt/chatterbox
+Environment=CB_MODEL=turbo
+# Environment=CB_REF=/opt/chatterbox/reference.wav
+Environment=CB_EXAG=0.7
+Environment=CB_CFG=0.4
+Environment=CB_TEMP=0.8
+ExecStart=/opt/chatterbox/venv/bin/uvicorn chatterbox_server:app --host 0.0.0.0 --port 8123
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

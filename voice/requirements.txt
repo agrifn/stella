@@ -1,0 +1,7 @@
+# Host-side Chatterbox TTS service (optional; only if STELLA_TTS_ENGINE=chatterbox).
+# Install torch separately for your CUDA build first, e.g.:
+#   pip install torch --index-url https://download.pytorch.org/whl/cu128
+chatterbox-tts==0.1.7
+fastapi>=0.110
+uvicorn[standard]>=0.30
+numpy>=1.24

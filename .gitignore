@@ -15,6 +15,17 @@ server/voices/
 *.onnx.json
 sample_*.wav
 
+# Chatterbox voice service: never commit cloned voices / reference audio / weights.
+# Only the code, docs, and templates under voice/ are tracked.
+voice/*.wav
+voice/wav/
+voice/checkpoints/
+voice/ckpts*/
+voice/*.pt
+voice/*.safetensors
+voice/venv/
+voice/.venv/
+
 # OS / editor cruft
 Thumbs.db
 .DS_Store

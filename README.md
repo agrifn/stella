@@ -112,6 +112,7 @@ client/   engine (shared voice loop), app (overlay), overlay, audio_capture (PTT
           command_manager + commands_api (GUI), cuda_paths, config, test_loop, audiotest
 config/   keybinds.json, settings.json
 docs/     setup.md
+voice/    optional Chatterbox TTS service (host-side; bring your own voice)
 docker-compose.yml   start_stella.bat   start_manager.bat
 ```
 
@@ -121,8 +122,18 @@ MIT, see [LICENSE](LICENSE). Free to use, modify, and share, with no warranty.
 
 ## Disclaimer
 
-A personal hobby project, provided as is. STELLA sends synthetic keystrokes (the same
-VoiceAttack-style SendInput approach the Star Citizen community runs under Easy
-Anti-Cheat). That has worked in practice, but anti-cheat behavior can change at any
-time and is outside this project's control, so use at your own risk and test in a safe
-situation first. Not affiliated with Cloud Imperium Games or Roberts Space Industries.
+A personal, non-commercial hobby project, provided as is (see [DISCLAIMER.md](DISCLAIMER.md)
+for the full legal and privacy notice). In short:
+
+- **Not affiliated** with Cloud Imperium Games / Roberts Space Industries, Microsoft,
+  or Resemble AI. All names and trademarks belong to their owners. In particular,
+  **"Cortana" is a trademark and intellectual property of Microsoft Corporation** and
+  is not ours; this repo ships **no Cortana voice or audio**.
+- **Voice cloning** (the optional Chatterbox path in [voice/](voice/)) needs your own
+  reference audio, which you must have the right to use and must not use to impersonate
+  anyone. No voice or reference audio is included here.
+- **Anti-cheat:** STELLA uses synthetic keystrokes (VoiceAttack-style SendInput, which
+  the community runs under EAC). That has worked in practice, but anti-cheat behavior
+  can change at any time and is outside this project's control. Use at your own risk.
+- **Privacy:** STT, the local LLM, and Piper TTS run on your machine; nothing leaves it
+  unless you opt into an external LLM or the UEX/knowledge APIs.
