@@ -30,6 +30,11 @@ class ClientConfig:
     samplerate: int = 16000
     input_device: int | None = None   # None = system default mic
     output_device: int | None = None  # None = system default speakers/headset
+    # Pre-STT gate: drop utterances shorter/quieter than these (accidental PTT taps
+    # and silence) before Whisper. If a quiet mic is being gated out, lower
+    # min_speech_rms; set it to 0 to disable the loudness gate entirely.
+    min_speech_seconds: float = 0.3
+    min_speech_rms: float = 0.003
     execute_keys: bool = True        # actually press keys (False = dry-run / log only)
     hold_duration: float = 1.5       # seconds to hold a 'hold' key (e.g. self destruct)
     # CHAT mode: by default just type at the cursor and press Enter (the user
@@ -40,9 +45,11 @@ class ClientConfig:
     # Wake / sleep: when asleep STELLA ignores PTT until woken (so it's not "fully
     # running"). Wake via the hotkey (toggles sleep), the tray menu, or - once
     # configured - a spoken wake word. It auto-sleeps after inactivity.
-    start_asleep: bool = True            # launch dormant; warm the models then sleep
+    # Wake/sleep is OPT-IN: by default STELLA boots awake and stays awake (works
+    # out of the box). Enable start_asleep / auto_sleep to get the dormant behavior.
+    start_asleep: bool = False           # True = launch dormant (must wake with wake_key)
     wake_key: str = "ctrl+alt+s"         # global hotkey that toggles wake/sleep
-    auto_sleep_enabled: bool = True      # if False, stays awake until manually slept (toggle in tray)
+    auto_sleep_enabled: bool = False     # True = sleep after auto_sleep_seconds idle
     auto_sleep_seconds: int = 300        # when enabled, sleep after this many idle seconds
     wake_word_enabled: bool = False      # spoken wake word (needs a model; see wake_word_model)
     wake_word_model: str = ""            # path to the openWakeWord 'stella' model (.onnx/.tflite)
@@ -74,6 +81,8 @@ def load_client_config(settings_path: Path | None = None) -> ClientConfig:
         samplerate=int(client.get("samplerate", ClientConfig.samplerate)),
         input_device=client.get("input_device", ClientConfig.input_device),
         output_device=client.get("output_device", ClientConfig.output_device),
+        min_speech_seconds=float(client.get("min_speech_seconds", ClientConfig.min_speech_seconds)),
+        min_speech_rms=float(client.get("min_speech_rms", ClientConfig.min_speech_rms)),
         execute_keys=bool(client.get("execute_keys", ClientConfig.execute_keys)),
         hold_duration=float(client.get("hold_duration", ClientConfig.hold_duration)),
         chat_open_key=client.get("chat_open_key", ClientConfig.chat_open_key),

@@ -8,8 +8,10 @@ Run on the same network as the server:
 """
 from __future__ import annotations
 
+import json
 import os
 import sys
+from pathlib import Path
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
@@ -22,7 +24,7 @@ from PyQt6.QtWidgets import (
 from .audio_player import AudioPlayer
 from .command_sender import CommandSender
 from .commands_api import CommandsAPI
-from .config import REPO_ROOT, load_client_config
+from .config import CONFIG_DIR, REPO_ROOT, load_client_config
 from .macros import macro_to_text, parse_macro_line
 
 # --- Qt key -> our keybind name (matches keybinds.json / pydirectinput aliases) ---
@@ -175,6 +177,90 @@ class CommandDialog(QDialog):
         }
 
 
+class SettingsDialog(QDialog):
+    """Edit the client section of settings.json: hotkeys, audio devices, and the
+    wake/sleep behavior. The overlay reads these at launch, so a save takes effect
+    the next time STELLA is started."""
+    def __init__(self, parent, settings_path: Path):
+        super().__init__(parent)
+        self.setWindowTitle("STELLA settings")
+        self.setMinimumWidth(480)
+        self._path = settings_path
+        try:
+            self._data = json.loads(settings_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            self._data = {}
+        c = self._data.get("client", {})
+
+        form = QFormLayout()
+        self.ptt = QLineEdit(c.get("ptt_key", "right ctrl"))
+        self.ptt.setPlaceholderText("e.g. right ctrl")
+        self.mode = QLineEdit(c.get("mode_toggle_key", "ctrl+alt+m"))
+        self.mode.setPlaceholderText("e.g. ctrl+alt+m")
+        self.wake = QLineEdit(c.get("wake_key", "ctrl+alt+s"))
+        self.wake.setPlaceholderText("e.g. ctrl+alt+s")
+        self.mic = QComboBox()
+        self._fill_devices(self.mic, "input", c.get("input_device"))
+        self.out = QComboBox()
+        self._fill_devices(self.out, "output", c.get("output_device"))
+        self.start_asleep = QCheckBox("Start asleep (must wake with the wake key)")
+        self.start_asleep.setChecked(bool(c.get("start_asleep", False)))
+        self.auto_sleep = QCheckBox("Auto-sleep when idle")
+        self.auto_sleep.setChecked(bool(c.get("auto_sleep_enabled", False)))
+
+        form.addRow("Push-to-talk key:", self.ptt)
+        form.addRow("Mode toggle key:", self.mode)
+        form.addRow("Wake key:", self.wake)
+        form.addRow("Microphone:", self.mic)
+        form.addRow("Audio output:", self.out)
+        form.addRow("", self.start_asleep)
+        form.addRow("", self.auto_sleep)
+
+        note = QLabel("Hotkeys use the 'keyboard' library format (e.g. 'right ctrl', "
+                      "'ctrl+alt+m'). Changes apply the next time you launch STELLA.")
+        note.setWordWrap(True)
+        note.setStyleSheet("color: #888;")
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(self._save)
+        buttons.rejected.connect(self.reject)
+
+        lay = QVBoxLayout(self)
+        lay.addLayout(form)
+        lay.addWidget(note)
+        lay.addWidget(buttons)
+
+    @staticmethod
+    def _fill_devices(combo: QComboBox, kind: str, current):
+        combo.addItem("System default", None)
+        try:
+            import sounddevice as sd
+            field = "max_input_channels" if kind == "input" else "max_output_channels"
+            for i, d in enumerate(sd.query_devices()):
+                if d.get(field, 0) > 0:
+                    combo.addItem(f"{i}: {d.get('name', '?')}", i)
+        except Exception:  # noqa: BLE001 - device enumeration is best-effort
+            pass
+        idx = combo.findData(current)
+        combo.setCurrentIndex(idx if idx >= 0 else 0)
+
+    def _save(self):
+        c = self._data.setdefault("client", {})
+        c["ptt_key"] = self.ptt.text().strip() or "right ctrl"
+        c["mode_toggle_key"] = self.mode.text().strip() or "ctrl+alt+m"
+        c["wake_key"] = self.wake.text().strip() or "ctrl+alt+s"
+        c["input_device"] = self.mic.currentData()
+        c["output_device"] = self.out.currentData()
+        c["start_asleep"] = self.start_asleep.isChecked()
+        c["auto_sleep_enabled"] = self.auto_sleep.isChecked()
+        try:
+            self._path.write_text(json.dumps(self._data, indent=2), encoding="utf-8")
+        except OSError as e:
+            QMessageBox.critical(self, "Save failed", str(e))
+            return
+        self.accept()
+
+
 class MainWindow(QMainWindow):
     COLS = ["Intent", "Key", "Confirm", "Hold", "Description"]
 
@@ -199,6 +285,9 @@ class MainWindow(QMainWindow):
             b.clicked.connect(slot)
             bar.addWidget(b)
         bar.addStretch(1)
+        b_settings = QPushButton("Settings...")
+        b_settings.clicked.connect(self.open_settings)
+        bar.addWidget(b_settings)
         launch = QPushButton("Launch STELLA")
         launch.setStyleSheet("font-weight: bold; color: #39d98a;")
         launch.clicked.connect(self.launch_stella)
@@ -306,6 +395,11 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Add voice failed", str(e))
 
     # -- launch the overlay -----------------------------------------------
+    def open_settings(self):
+        dlg = SettingsDialog(self, CONFIG_DIR / "settings.json")
+        if dlg.exec():
+            self.statusBar().showMessage("Settings saved - relaunch STELLA to apply.")
+
     def launch_stella(self):
         bat = REPO_ROOT / "start_stella.bat"
         if not bat.exists():

@@ -55,7 +55,10 @@ class STTHandler:
         for seg in segments:
             if getattr(seg, "no_speech_prob", 0.0) > 0.6:
                 continue
-            if getattr(seg, "avg_logprob", 0.0) < -1.0:
+            # Lenient logprob floor: only drop very-low-confidence segments, so a
+            # quiet/accented real command is kept (the stoplist still catches the
+            # common silence hallucinations below).
+            if getattr(seg, "avg_logprob", 0.0) < -1.3:
                 continue
             kept.append(seg.text)
         text = " ".join(kept).strip()

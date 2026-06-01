@@ -53,6 +53,10 @@ class StellaEngine:
                                  cfg.chat_open_delay, enabled=do_exec)
         self.recorder = PTTRecorder(cfg.ptt_key, cfg.samplerate, cfg.input_device)
 
+        # Pre-STT gate thresholds (tunable so a quiet mic isn't silently dropped).
+        self._min_dur = cfg.min_speech_seconds
+        self._min_rms = cfg.min_speech_rms
+
         # Wake/sleep: when asleep, PTT utterances are ignored until woken.
         self.active = not cfg.start_asleep
         self._auto_sleep = cfg.auto_sleep_seconds
@@ -149,11 +153,6 @@ class StellaEngine:
         self._emit("status", text="ready" if self.active else f"asleep - {self._wake_key} to wake")
 
     # -- one utterance ----------------------------------------------------
-    # Gate out accidental PTT taps and (near-)silence before STT, so Whisper
-    # never gets a chance to hallucinate a phantom command from noise.
-    _MIN_DUR_S = 0.35
-    _MIN_RMS = 0.006
-
     def process(self, audio):
         # Asleep: ignore PTT entirely (wake via hotkey/tray/wake-word first).
         if not self.active:
@@ -162,8 +161,12 @@ class StellaEngine:
         t0 = time.time()
         dur = len(audio) / self.stt.samplerate
         rms = float(np.sqrt(np.mean(np.square(audio)))) if len(audio) else 0.0
-        if dur < self._MIN_DUR_S or rms < self._MIN_RMS:
-            log.info("skip utterance: %.2fs rms=%.4f (too short/quiet)", dur, rms)
+        # Gate accidental PTT taps and (near-)silence before STT. Thresholds are
+        # configurable; min_speech_rms=0 disables the loudness gate for quiet mics.
+        if dur < self._min_dur or (self._min_rms > 0 and rms < self._min_rms):
+            log.info("skip utterance: %.2fs rms=%.4f (too short/quiet; "
+                     "min %.2fs/%.4f - lower min_speech_rms if this eats real speech)",
+                     dur, rms, self._min_dur, self._min_rms)
             return
         text = self.stt.transcribe(audio)
         t_stt = time.time() - t0
