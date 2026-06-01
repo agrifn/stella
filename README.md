@@ -52,23 +52,12 @@ ONE machine (Windows + WSL2, RTX 5090)
   the GUI) or an optional **Chatterbox** host service for a custom/cloned voice (see
   [voice/](voice/)). Pick via `STELLA_TTS_ENGINE` in `.env`; `/health` and the GUI show
   which engine is live. The GUI voice catalog applies to Piper only.
-- **Knowledge lookups (optional):** ask factual questions about ships, locations, and
-  commodities ("what's the Guardian MX armor rating", "how fast is a Gladius", "where is
-  Crusader", "is laranite mineable"), plus weapon/armor/component **stats** ("what's the
-  A03 sniper's fire rate", "Scourge railgun damage"). STELLA caches indexes from the
-  StarCitizenWiki API, fuzzy-matches the subject from your speech (a two-stage matcher
-  disambiguates across ships/places/gear), and answers from real data. Toggle with
-  `knowledge.enabled` in settings; when off it adds zero overhead (the command path is
-  never touched).
-- **Crafting / blueprints:** ask how to craft something ("what do I need to craft an
-  Omnisky III", "how long does it take", "how is that blueprint unlocked"). Backed by the
-  StarCitizenWiki `/api/blueprints` data (ingredients, craft time, unlocking missions).
-- **"Where to buy" lookups (optional, UEX):** ask where to buy an item/weapon or what it
-  costs ("where can I buy a P4-AR", "how much is an Arrowhead", "cheapest power plant").
-  Backed by the [UEX Corp](https://uexcorp.space) live trade API - set a free
-  `STELLA_UEX_TOKEN` in `.env` to enable it (no token = this sub-feature is simply off).
-  Shop inventories left the game files in SC 3.20, so this community price data is the only
-  source; UEX has no blueprint/crafting data, so blueprint locations aren't supported.
+- **Knowledge lookups (experimental, off by default):** an optional add-on can answer
+  factual SC questions (ship/equipment stats, "where to buy", crafting) from the
+  StarCitizenWiki and UEX Corp APIs. It is **disabled by default** so STELLA stays a
+  focused voice-command assistant. Re-enable it with `knowledge.enabled` in settings
+  (and a free `STELLA_UEX_TOKEN` for the "where to buy" part); when off it adds zero
+  overhead and the command path is never touched.
 
 Measured: ~1.0s from end of speech to in-game action (STT ~0.3s + intent ~0.7s); the
 spoken reply follows in the background so it never delays the action.

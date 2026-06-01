@@ -51,9 +51,12 @@ class TTSConfig:
 
 @dataclass(frozen=True)
 class KnowledgeConfig:
-    # Optional factual lookups (SC ship stats etc). When disabled, the 'info'
-    # intent is never added to the prompt and no data is fetched - zero overhead.
-    enabled: bool = True
+    # Optional factual lookups (SC ship/equipment stats, where-to-buy, crafting).
+    # DISABLED by default: STELLA is a pure voice-command assistant. When off, the
+    # 'info' intent is never added to the prompt and no data is fetched (zero
+    # overhead), and the LLM only classifies commands vs chat. Set enabled=true (or
+    # STELLA_KNOWLEDGE_ENABLED=1) to bring it back.
+    enabled: bool = False
     # UEX Corp API token (free, from uexcorp.space/api/apps). When set AND knowledge
     # is enabled, STELLA can answer "where to buy / how much" for items, weapons,
     # armor and ship components. Prefer the STELLA_UEX_TOKEN env var - never commit it.

@@ -21,7 +21,7 @@
     "sample_rate": 22050
   },
   "knowledge": {
-    "enabled": true
+    "enabled": false
   },
   "client": {
     "ptt_key": "right ctrl",
