@@ -1,39 +1,15 @@
 {
-  "_comment": "Curated Star Citizen Alpha 4.0 commands (from scfocus.org defaults). LLM classifies intent; server resolves key. Keys use pydirectinput names. Edit to match your personal SC bindings. Manage via the command-manager GUI. Note: landing_gear (tap N) and autoland (hold N) intentionally share key N - in SC a tap toggles gear and a hold triggers autoland, so the tap-vs-hold distinction is correct, not a duplicate.",
+  "_comment": "Curated Star Citizen Alpha 4.0 commands (from scfocus.org defaults). LLM classifies intent; server resolves key. Keys use pydirectinput names. Edit to match your personal SC bindings. Manage via the command-manager GUI.",
   "keybinds": {
     "decouple_toggle": {
       "key": "c",
       "confirm_required": false,
       "description": "Toggle decoupled/coupled flight mode",
-      "hold": true,
       "examples": [
         "decouple",
         "coupled mode",
         "decoupled mode",
         "toggle decouple"
-      ]
-    },
-    "spacebrake": {
-      "key": "x",
-      "confirm_required": false,
-      "description": "Full stop / spacebrake",
-      "examples": [
-        "full stop",
-        "brake",
-        "spacebrake",
-        "all stop"
-      ]
-    },
-    "boost": {
-      "key": "shiftleft",
-      "confirm_required": false,
-      "description": "Afterburner / boost",
-      "hold": true,
-      "examples": [
-        "boost",
-        "afterburner",
-        "punch it",
-        "full burn"
       ]
     },
     "cruise_control_toggle": {
@@ -58,28 +34,6 @@
         "toggle vtol"
       ]
     },
-    "throttle_increase_max": {
-      "key": "f10+f10",
-      "confirm_required": false,
-      "description": "Throttle to maximum (double tap)",
-      "examples": [
-        "full throttle",
-        "max throttle",
-        "throttle up max",
-        "all ahead full"
-      ]
-    },
-    "throttle_decrease_min": {
-      "key": "f9+f9",
-      "confirm_required": false,
-      "description": "Throttle to minimum (double tap)",
-      "examples": [
-        "kill throttle",
-        "zero throttle",
-        "throttle down",
-        "idle engines"
-      ]
-    },
     "landing_gear": {
       "key": "n",
       "confirm_required": false,
@@ -89,18 +43,6 @@
         "gear up",
         "gear down",
         "toggle gear"
-      ]
-    },
-    "autoland": {
-      "key": "n",
-      "confirm_required": false,
-      "description": "Autoland",
-      "hold": true,
-      "examples": [
-        "autoland",
-        "auto land",
-        "automatic landing",
-        "land automatically"
       ]
     },
     "request_landing": {
@@ -117,8 +59,8 @@
     "nav_mode": {
       "key": "b",
       "confirm_required": false,
-      "description": "Enter quantum/NAV mode (hold and release B)",
       "hold": true,
+      "description": "Enter quantum/NAV mode (hold and release B)",
       "examples": [
         "nav mode",
         "quantum mode",
@@ -153,7 +95,6 @@
       "confirm_required": false,
       "description": "Toggle weapons power on/off",
       "examples": [
-        "weapons power",
         "weapons on",
         "weapons off",
         "arm weapons"
@@ -164,7 +105,6 @@
       "confirm_required": false,
       "description": "Toggle shields power on/off",
       "examples": [
-        "shields power",
         "shields on",
         "shields off",
         "toggle shields"
@@ -175,10 +115,9 @@
       "confirm_required": false,
       "description": "Toggle thruster power on/off",
       "examples": [
-        "thrusters power",
-        "thrusters on",
-        "thrusters off",
-        "toggle thrusters"
+        "engines on",
+        "engines off",
+        "toggle engines"
       ]
     },
     "reset_power": {
@@ -195,37 +134,46 @@
     "weapons_power_max": {
       "key": "f5",
       "confirm_required": false,
-      "description": "Set weapons power to maximum",
       "hold": true,
+      "hold_duration": 0.25,
+      "description": "Set weapons power to maximum",
       "examples": [
+        "max guns",
+        "weapons hot",
         "max weapon power",
+        "weapons to max",
         "full power to weapons",
-        "all power to weapons",
-        "weapons to max"
+        "all power to weapons"
       ]
     },
     "engines_power_max": {
       "key": "f6",
       "confirm_required": false,
-      "description": "Set engines power to maximum",
       "hold": true,
+      "hold_duration": 0.25,
+      "description": "Set engines power to maximum",
       "examples": [
+        "max engines",
+        "punch it",
         "max engine power",
+        "engines to max",
         "full power to engines",
-        "all power to engines",
-        "engines to max"
+        "all power to engines"
       ]
     },
     "shields_power_max": {
       "key": "f7",
       "confirm_required": false,
-      "description": "Set shields power to maximum",
       "hold": true,
+      "hold_duration": 0.25,
+      "description": "Set shields power to maximum",
       "examples": [
+        "max shields",
+        "brace",
         "max shield power",
+        "shields to max",
         "full power to shields",
-        "all power to shields",
-        "shields to max"
+        "all power to shields"
       ]
     },
     "unlock_target": {
@@ -242,8 +190,8 @@
     "gimbal_cycle": {
       "key": "g",
       "confirm_required": false,
-      "description": "Cycle gimbal assist / standard / locked modes",
       "hold": true,
+      "description": "Cycle gimbal assist / standard / locked modes",
       "examples": [
         "cycle gimbal",
         "gimbal mode",
@@ -257,8 +205,14 @@
       "description": "Launch decoy burst (tap)",
       "examples": [
         "flares",
+        "fire flares",
+        "launch flares",
+        "deploy flares",
+        "pop flares",
         "chaff",
+        "drop chaff",
         "countermeasures",
+        "release countermeasures",
         "decoys"
       ]
     },
@@ -309,8 +263,8 @@
     "exit_seat": {
       "key": "y",
       "confirm_required": false,
-      "description": "Exit pilot seat",
       "hold": true,
+      "description": "Exit pilot seat",
       "examples": [
         "exit seat",
         "get up",
@@ -397,8 +351,8 @@
     "self_destruct": {
       "key": "backspace",
       "confirm_required": true,
-      "description": "Ship self destruct",
       "hold": true,
+      "description": "Ship self destruct",
       "examples": [
         "self destruct",
         "scuttle ship",
@@ -406,26 +360,120 @@
         "blow it up"
       ]
     },
-    "evasive_maneuvers": {
+    "lower_shields_min": {
+      "key": "alt+f7",
       "confirm_required": false,
-      "description": "Evasive maneuvers: boost power to shields and engines",
+      "hold": true,
+      "hold_duration": 0.25,
+      "description": "lower shields to min. value",
       "examples": [
-        "evasive maneuvers",
-        "evade",
-        "evasive action",
-        "juke"
-      ],
-      "sequence": [
-        {
-          "key": "f7",
-          "hold": true,
-          "delay": 0.15
-        },
-        {
-          "key": "f6",
-          "hold": true,
-          "delay": 0.15
-        }
+        "drop shields",
+        "cut shields",
+        "minimum shields",
+        "kill shield power",
+        "shields to zero"
+      ]
+    },
+    "lower_engine_min": {
+      "key": "alt+f6",
+      "confirm_required": false,
+      "hold": true,
+      "hold_duration": 0.25,
+      "description": "drops engine power to min.",
+      "examples": [
+        "cut engines",
+        "minimum engines",
+        "cut engine power",
+        "kill engines",
+        "engines to zero"
+      ]
+    },
+    "lower_weapons_min": {
+      "key": "alt+f5",
+      "confirm_required": false,
+      "hold": true,
+      "hold_duration": 0.25,
+      "description": "lowers weapons power to min.",
+      "examples": [
+        "cut guns",
+        "weapons cold",
+        "minimum weapons",
+        "cut weapon power",
+        "kill weapons",
+        "weapons to zero"
+      ]
+    },
+    "weapons_power_inc": {
+      "key": "f5",
+      "confirm_required": false,
+      "description": "Increase weapons power by one pip",
+      "examples": [
+        "more guns",
+        "more weapons",
+        "more weapon power",
+        "add weapons",
+        "more power to guns",
+        "raise weapons"
+      ]
+    },
+    "engines_power_inc": {
+      "key": "f6",
+      "confirm_required": false,
+      "description": "Increase engines power by one pip",
+      "examples": [
+        "more engines",
+        "more engine power",
+        "add engines",
+        "more power to engines",
+        "raise engines",
+        "raise engine power"
+      ]
+    },
+    "shields_power_inc": {
+      "key": "f7",
+      "confirm_required": false,
+      "description": "Increase shields power by one pip",
+      "examples": [
+        "more shields",
+        "more shield power",
+        "add shields",
+        "more power to shields",
+        "raise shields"
+      ]
+    },
+    "weapons_power_dec": {
+      "key": "alt+f5",
+      "confirm_required": false,
+      "description": "Decrease weapons power by one pip",
+      "examples": [
+        "less guns",
+        "less weapons",
+        "less weapon power",
+        "fewer guns",
+        "ease off weapons"
+      ]
+    },
+    "engines_power_dec": {
+      "key": "alt+f6",
+      "confirm_required": false,
+      "description": "Decrease engines power by one pip",
+      "examples": [
+        "less engines",
+        "less engine power",
+        "fewer engines",
+        "ease off engines",
+        "back off engines"
+      ]
+    },
+    "shields_power_dec": {
+      "key": "alt+f7",
+      "confirm_required": false,
+      "description": "Decrease shields power by one pip",
+      "examples": [
+        "less shields",
+        "less shield power",
+        "fewer shields",
+        "ease off shields"
       ]
     }
   }
