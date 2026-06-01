@@ -26,6 +26,7 @@ from .command_sender import CommandSender
 from .config import ClientConfig
 from .confirm import is_affirmative
 from .keybind_executor import KeybindExecutor
+from .multicmd import split_commands
 from .stt_handler import STTHandler
 
 log = logging.getLogger("stella.engine")
@@ -180,8 +181,20 @@ class StellaEngine:
             self._emit("chat_sent", text=text)
             return
 
-        # COMMAND mode. Request intent ONLY (speak=False) so TTS synthesis does
-        # not sit in the action path; we voice the reply separately, after acting.
+        # COMMAND mode: one utterance may carry several commands ("lower shields and
+        # raise engine power") and/or a repeat ("fire three flares"). Split it locally
+        # and run each part through the (single-intent) server in turn - the classifier
+        # and server stay simple; the orchestration lives here.
+        segments = split_commands(text)
+        if len(segments) > 1 or (segments and segments[0][1] > 1):
+            log.info("multi-command: %r -> %s", text, segments)
+        for seg_text, count in segments:
+            self._handle_segment(seg_text, count, t_stt, dur)
+
+    def _handle_segment(self, text: str, count: int, t_stt: float, dur: float):
+        """Classify and act on one sub-command, repeating a normal command `count`
+        times. Request intent ONLY (speak=False) so TTS synthesis does not sit in the
+        action path; we voice the reply separately, after acting."""
         t1 = time.time()
         try:
             res = self.sender.send(text, speak=False)
@@ -189,17 +202,19 @@ class StellaEngine:
             self._emit("error", text=f"server error: {e}")
             return
         t_srv = time.time() - t1
-        log.info("LLM %.2fs -> intent=%s key=%s", t_srv, res.intent, res.keybind)
+        log.info("LLM %.2fs -> intent=%s key=%s x%d", t_srv, res.intent, res.keybind, count)
 
         self._emit("response", intent=res.intent, keybind=res.keybind,
                    confirm=res.confirm_required, text=res.response_text)
 
-        # No action (chat / knowledge intent): speak the reply via Chatterbox.
+        # No action (chat intent, or a mis-split part that matched no command): speak
+        # via Chatterbox. An over-split fails safe here - no keys are sent.
         if not res.keybind and not res.sequence:
             self._speak_async(res.response_text, route="chat")
             return
 
-        # Dangerous command: speak the prompt, then wait for a spoken yes/no.
+        # Dangerous command: speak the prompt, then wait for a spoken yes/no. A
+        # dangerous command is never auto-repeated - it fires once after confirmation.
         if res.confirm_required:
             self._speak_blocking(res.response_text, route="ack")
             self._emit("await_confirm", intent=res.intent)
@@ -217,8 +232,8 @@ class StellaEngine:
             self._speak_async("Confirmed.", route="ack")
             return
 
-        # Normal command: ACT IMMEDIATELY, then voice the ack via fast Piper.
-        self._execute(res)
+        # Normal command: ACT IMMEDIATELY (count times), then voice the ack via Piper.
+        self._execute(res, count=count)
         self._emit("status", text=f"STT {t_stt:.1f}s | LLM {t_srv:.1f}s | {dur:.0f}s audio")
         self._speak_async(res.response_text, route="ack")
 
@@ -240,14 +255,20 @@ class StellaEngine:
         if audio:
             self.player.play_b64(audio, blocking=True)
 
-    def _execute(self, res):
+    def _execute(self, res, count: int = 1):
+        count = max(1, count)
         try:
-            if res.sequence:
-                self.executor.execute_sequence(res.sequence)
-                self._emit("executed", intent=res.intent, keybind=f"macro({len(res.sequence)} steps)")
-            else:
-                self.executor.execute(res.keybind, hold=res.hold)
-                self._emit("executed", intent=res.intent, keybind=res.keybind)
+            for i in range(count):
+                if res.sequence:
+                    self.executor.execute_sequence(res.sequence)
+                else:
+                    self.executor.execute(res.keybind, hold=res.hold)
+                if i + 1 < count:
+                    time.sleep(0.12)  # brief gap so rapid repeats register as separate presses
+            label = f"macro({len(res.sequence)} steps)" if res.sequence else res.keybind
+            if count > 1:
+                label = f"{label} x{count}"
+            self._emit("executed", intent=res.intent, keybind=label)
         except Exception as e:  # noqa: BLE001
             self._emit("error", text=f"exec error: {e}")
 

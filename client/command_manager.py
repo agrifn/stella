@@ -120,22 +120,42 @@ class CommandDialog(QDialog):
             self.confirm.setChecked(bool(command.get("confirm_required")))
             self.hold.setChecked(bool(command.get("hold")))
         self.examples = QPlainTextEdit("\n".join(command.get("examples", [])) if self.editing else "")
-        self.examples.setPlaceholderText("Optional sample phrases, one per line")
+        self.examples.setPlaceholderText(
+            "What you SAY to trigger this, one phrase per line. e.g.\n"
+            "shields to max\nmax the shields\npower up the shields")
         self.examples.setFixedHeight(80)
+        phrases_help = QLabel(
+            "Add a few ways you might say this out loud. The AI learns the command "
+            "from these phrases, so more variety = better recognition.")
+        phrases_help.setWordWrap(True)
+        phrases_help.setStyleSheet("color: gray; font-size: 11px;")
 
         self.macro = QPlainTextEdit(macro_to_text(command.get("sequence", [])) if self.editing else "")
         self.macro.setPlaceholderText(
-            "Macro (overrides Key): one step per line. e.g.\n"
+            "Optional multi-key sequence (overrides Key). One step per line. e.g.\n"
             "f7 hold\nf6 hold\nh x3\ntab /0.2")
         self.macro.setFixedHeight(80)
+        # Format key (#1): spell out the macro line tokens so they're discoverable.
+        macro_help = QLabel(
+            "Macro format - one step per line:\n"
+            "    <key>          press once   (e.g. f7, alt+c, period, space)\n"
+            "    <key> hold     press and hold   (e.g. f7 hold)\n"
+            "    <key> xN       press N times   (e.g. h x3)\n"
+            "    <key> /S       then wait S seconds   (e.g. tab /0.2)\n"
+            "Combine them: 'f6 x2 /0.3' = tap F6 twice, then wait 0.3s. "
+            "Leave blank to just use the single Key above.")
+        macro_help.setWordWrap(True)
+        macro_help.setStyleSheet("color: gray; font-size: 11px;")
 
         form.addRow("Intent:", self.intent)
         form.addRow("Key:", self._wrap(key_row))
         form.addRow("Description:", self.description)
         form.addRow("", self.confirm)
         form.addRow("", self.hold)
-        form.addRow("Examples:", self.examples)
+        form.addRow("Phrases you say:", self.examples)
+        form.addRow("", phrases_help)
         form.addRow("Macro:", self.macro)
+        form.addRow("", macro_help)
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
