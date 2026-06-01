@@ -44,8 +44,11 @@ services:
       STELLA_UEX_TOKEN: ${STELLA_UEX_TOKEN:-}
       # Optional shared secret; when set, every route except /health needs a Bearer token.
       STELLA_API_TOKEN: ${STELLA_API_TOKEN:-}
-      # TTS engine: default "piper" (self-contained in the image). Set to "chatterbox"
-      # in .env to use a host-side Chatterbox service (e.g. a custom voice) on :8123.
+      # Hybrid TTS: fast Piper for command acks, Chatterbox (host service) for chat/
+      # knowledge replies. Either can be set to "piper" or "chatterbox". STELLA_TTS_ENGINE
+      # is the legacy single-engine fallback for the chat route.
+      STELLA_TTS_ACK_ENGINE: ${STELLA_TTS_ACK_ENGINE:-piper}
+      STELLA_TTS_CHAT_ENGINE: ${STELLA_TTS_CHAT_ENGINE:-chatterbox}
       STELLA_TTS_ENGINE: ${STELLA_TTS_ENGINE:-piper}
       STELLA_CHATTERBOX_URL: ${STELLA_CHATTERBOX_URL:-http://host.docker.internal:8123}
     ports:

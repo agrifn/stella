@@ -194,14 +194,14 @@ class StellaEngine:
         self._emit("response", intent=res.intent, keybind=res.keybind,
                    confirm=res.confirm_required, text=res.response_text)
 
-        # No action (chat intent): just speak the reply in the background.
+        # No action (chat / knowledge intent): speak the reply via Chatterbox.
         if not res.keybind and not res.sequence:
-            self._speak_async(res.response_text)
+            self._speak_async(res.response_text, route="chat")
             return
 
         # Dangerous command: speak the prompt, then wait for a spoken yes/no.
         if res.confirm_required:
-            self._speak_blocking(res.response_text)
+            self._speak_blocking(res.response_text, route="ack")
             self._emit("await_confirm", intent=res.intent)
             # Bounded wait: if the pilot never presses PTT to answer, auto-cancel
             # instead of blocking the engine loop forever.
@@ -210,32 +210,33 @@ class StellaEngine:
             self._emit("transcript", text=conf_text)
             if not is_affirmative(conf_text):
                 self._emit("cancelled", intent=res.intent)
-                self._speak_async("Cancelled.")
+                self._speak_async("Cancelled.", route="ack")
                 return
             self._emit("confirmed", intent=res.intent)
             self._execute(res)
-            self._speak_async("Confirmed.")
+            self._speak_async("Confirmed.", route="ack")
             return
 
-        # Normal command: ACT IMMEDIATELY, then voice the reply in the background.
+        # Normal command: ACT IMMEDIATELY, then voice the ack via fast Piper.
         self._execute(res)
         self._emit("status", text=f"STT {t_stt:.1f}s | LLM {t_srv:.1f}s | {dur:.0f}s audio")
-        self._speak_async(res.response_text)
+        self._speak_async(res.response_text, route="ack")
 
-    def _speak_async(self, text: str):
-        """Fetch TTS and play it without blocking the loop (voice trails the action)."""
+    def _speak_async(self, text: str, route: str = "chat"):
+        """Fetch TTS and play it without blocking the loop (voice trails the action).
+        route='ack' -> fast Piper (command feedback); 'chat' -> Chatterbox."""
         if not text:
             return
         def run():
-            audio = self.sender.speak(text)
+            audio = self.sender.speak(text, route)
             if audio:
                 self.player.play_b64(audio, blocking=False)
         threading.Thread(target=run, daemon=True).start()
 
-    def _speak_blocking(self, text: str):
+    def _speak_blocking(self, text: str, route: str = "chat"):
         if not text:
             return
-        audio = self.sender.speak(text)
+        audio = self.sender.speak(text, route)
         if audio:
             self.player.play_b64(audio, blocking=True)
 

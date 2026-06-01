@@ -1,14 +1,25 @@
-"""Piper TTS integration with switchable / downloadable voices.
+"""Hybrid TTS: route each utterance to the right engine.
 
-Runs the piper binary as a subprocess (text in on stdin, raw 16-bit PCM out on
-stdout) and wraps the PCM in a WAV in-memory. The active voice can be changed at
-runtime and new Piper voices downloaded from the rhasspy/piper-voices repo. The
-active voice is persisted in the voices dir so it survives restarts.
+  - "ack"  route -> Piper (fast, local, prewarmed): short deterministic command acks
+                    on the latency-critical path ("Boosting.", "Full stop.").
+  - "chat" route -> Chatterbox host service (higher quality): longer chat / knowledge
+                    replies where latency is forgivable.
+
+Both engines live behind this one handler so the cache, readiness, and Piper voice
+management stay in one place. Engines are chosen by env:
+  STELLA_TTS_ACK_ENGINE  (default "piper")
+  STELLA_TTS_CHAT_ENGINE (default: STELLA_TTS_ENGINE, else "piper")
+  STELLA_TTS_ENGINE      (legacy single-engine fallback for the chat route)
+
+Each engine's audio is wrapped/declared at ITS OWN sample rate (Piper from the
+voice's .onnx.json; Chatterbox returns a full WAV at its own rate), never one
+hardcoded value, so neither plays at the wrong pitch.
 """
 from __future__ import annotations
 
 import asyncio
 import io
+import json
 import logging
 import os
 import re
@@ -50,10 +61,9 @@ def _voice_url(voice: str, suffix: str) -> str:
 
 
 class TTSHandler:
-    # Synthesis is the slow part of a spoken reply (neural TTS ~1s+). The LLM runs
-    # at temperature 0, so a given command yields the SAME ack text every time -
-    # caching by text makes repeated acks instant (no re-synthesis round trip).
-    _CACHE_MAX = 128
+    # The LLM runs at temperature 0, so a given command/answer yields the SAME text
+    # every time - caching by (engine, voice, text) makes repeats instant.
+    _CACHE_MAX = 256
 
     def __init__(self, cfg: TTSConfig):
         self._cfg = cfg
@@ -61,14 +71,30 @@ class TTSHandler:
         self._active_file = self._dir / "active.txt"
         self._voice = self._load_active() or cfg.voice
         self._cache: "OrderedDict[tuple, bytes]" = OrderedDict()
-        self._engine = os.environ.get("STELLA_TTS_ENGINE", "piper")
+        # Per-route engines. Acks default to Piper (fast); chat falls back to the
+        # legacy STELLA_TTS_ENGINE so existing single-engine setups keep working.
+        self._ack_engine = os.environ.get("STELLA_TTS_ACK_ENGINE") or "piper"
+        self._chat_engine = (os.environ.get("STELLA_TTS_CHAT_ENGINE")
+                             or os.environ.get("STELLA_TTS_ENGINE") or "piper")
         self._chatterbox_url = os.environ.get(
             "STELLA_CHATTERBOX_URL", "http://host.docker.internal:8123")
-        self._ready: Optional[bool] = None  # cached readiness (probed for chatterbox)
+        self._ready_cache: dict[str, bool] = {}   # engine name -> last probe result
+
+    # -- engine routing ---------------------------------------------------
+    @property
+    def ack_engine(self) -> str:
+        return self._ack_engine
 
     @property
-    def engine(self) -> str:
-        return self._engine
+    def chat_engine(self) -> str:
+        return self._chat_engine
+
+    @property
+    def engine(self) -> str:  # summary for the startup log
+        return f"ack={self._ack_engine},chat={self._chat_engine}"
+
+    def _engine_for(self, route: str) -> str:
+        return self._ack_engine if route == "ack" else self._chat_engine
 
     # -- active voice persistence ----------------------------------------
     def _load_active(self) -> Optional[str]:
@@ -93,37 +119,41 @@ class TTSHandler:
     def _model_path(self, voice: Optional[str] = None) -> Path:
         return self._dir / f"{voice or self._voice}.onnx"
 
+    # -- readiness --------------------------------------------------------
+    def _engine_ready(self, engine: str) -> bool:
+        if engine == "chatterbox":
+            return bool(self._ready_cache.get("chatterbox"))
+        return self._model_path().exists()  # piper: the ack voice file
+
     @property
     def ready(self) -> bool:
-        """Best-effort cached readiness. For chatterbox this reflects the last probe
-        (call check_ready() to refresh); for piper it checks the voice model file."""
-        if not self._cfg.enabled:
-            return False
-        if self._engine == "chatterbox":
-            return bool(self._ready)
-        return self._model_path().exists()
+        """Command-path readiness = the ACK engine can synthesize (the critical path).
+        A downed chat engine does NOT make the system 'not ready'."""
+        return self._cfg.enabled and self._engine_ready(self._ack_engine)
+
+    def chat_ready(self) -> bool:
+        return self._cfg.enabled and self._engine_ready(self._chat_engine)
 
     async def check_ready(self) -> bool:
-        """Probe whether synthesis can ACTUALLY succeed, and cache it. For chatterbox
-        this pings the host service so /health never falsely reports ready when no
-        service is listening; for piper it checks the voice file exists."""
+        """Probe BOTH engines and cache results. Returns ACK-engine readiness (what
+        /health treats as the critical path); chat readiness is surfaced separately."""
         if not self._cfg.enabled:
-            self._ready = False
             return False
-        if self._engine != "chatterbox":
-            self._ready = self._model_path().exists()
-            return self._ready
-        try:
-            async with httpx.AsyncClient(timeout=3.0) as client:
-                await client.get(self._chatterbox_url)  # any HTTP response = reachable
-            ok = True
-        except httpx.HTTPError:
-            ok = False
-        if ok != self._ready:
-            log.warning("chatterbox TTS at %s: %s", self._chatterbox_url,
-                        "reachable" if ok else "UNREACHABLE - no audio will be produced")
-        self._ready = ok
-        return ok
+        for engine in {self._ack_engine, self._chat_engine}:
+            if engine == "chatterbox":
+                try:
+                    async with httpx.AsyncClient(timeout=3.0) as client:
+                        await client.get(self._chatterbox_url)  # any response = reachable
+                    ok = True
+                except httpx.HTTPError:
+                    ok = False
+                if ok != self._ready_cache.get("chatterbox"):
+                    log.warning("chatterbox TTS at %s: %s", self._chatterbox_url,
+                                "reachable" if ok else "UNREACHABLE - chat replies will be silent")
+                self._ready_cache["chatterbox"] = ok
+            else:  # piper
+                self._ready_cache["piper"] = self._model_path().exists()
+        return self.ready
 
     # -- voice catalogue --------------------------------------------------
     def available_voices(self) -> list[str]:
@@ -137,7 +167,7 @@ class TTSHandler:
             raise FileNotFoundError(f"voice not installed: {voice}")
         self._voice = voice
         self._save_active()
-        log.info("active voice set to %s", voice)
+        log.info("active (Piper ack) voice set to %s", voice)
 
     async def download_voice(self, voice: str) -> None:
         """Fetch a Piper voice (.onnx + .onnx.json) by name into the voices dir.
@@ -165,25 +195,41 @@ class TTSHandler:
         log.info("downloaded voice %s", voice)
 
     # -- synthesis --------------------------------------------------------
-    def _wrap_wav(self, pcm: bytes) -> bytes:
+    def _voice_rate(self) -> int:
+        """Native sample rate of the active Piper voice (from its .onnx.json) so the
+        WAV header matches the PCM. Falls back to the configured rate."""
+        try:
+            j = json.loads((self._dir / f"{self._voice}.onnx.json").read_text(encoding="utf-8"))
+            return int((j.get("audio") or {}).get("sample_rate") or self._cfg.sample_rate)
+        except Exception:  # noqa: BLE001
+            return self._cfg.sample_rate
+
+    def _wrap_wav(self, pcm: bytes, rate: int) -> bytes:
         buf = io.BytesIO()
         with wave.open(buf, "wb") as wf:
             wf.setnchannels(1)
             wf.setsampwidth(2)
-            wf.setframerate(self._cfg.sample_rate)
+            wf.setframerate(rate)
             wf.writeframes(pcm)
         return buf.getvalue()
 
-    async def synthesize(self, text: str) -> Optional[bytes]:
-        if not self.ready or not text.strip():
+    async def synthesize(self, text: str, route: str = "ack") -> Optional[bytes]:
+        """Synthesize text. route='ack' -> Piper (fast, command acks); route='chat'
+        -> Chatterbox (quality, chat/knowledge). Fails SOFT (returns None) so a downed
+        chat engine never breaks the ack/command path."""
+        if not self._cfg.enabled or not text.strip():
             return None
-        engine = os.environ.get("STELLA_TTS_ENGINE", "piper")
+        engine = self._engine_for(route)
         key = (engine, self._voice, text.strip())
         cached = self._cache.get(key)
         if cached is not None:
             self._cache.move_to_end(key)  # LRU touch
             return cached
-        wav = await self._synthesize(engine, text)
+        try:
+            wav = await self._synthesize(engine, text)
+        except Exception:  # noqa: BLE001 - TTS is non-critical; never raise to caller
+            log.exception("TTS synth failed (engine=%s route=%s)", engine, route)
+            return None
         if wav:
             self._cache[key] = wav
             self._cache.move_to_end(key)
@@ -193,11 +239,10 @@ class TTSHandler:
 
     async def _synthesize(self, engine: str, text: str) -> Optional[bytes]:
         if engine == "chatterbox":
-            url = os.environ.get("STELLA_CHATTERBOX_URL", "http://host.docker.internal:8123")
             async with httpx.AsyncClient(timeout=60.0) as client:
-                r = await client.post(f"{url}/synthesize", json={"text": text})
+                r = await client.post(f"{self._chatterbox_url}/synthesize", json={"text": text})
                 r.raise_for_status()
-                return r.content or None
+                return r.content or None  # host service returns a full WAV at its own rate
         proc = await asyncio.create_subprocess_exec(
             *shlex.split(self._cfg.piper_bin),
             "--model", str(self._model_path()),
@@ -211,4 +256,4 @@ class TTSHandler:
             raise RuntimeError(
                 f"piper failed (rc={proc.returncode}): {err.decode('utf-8', 'ignore')[:300]}"
             )
-        return self._wrap_wav(pcm)
+        return self._wrap_wav(pcm, self._voice_rate())

@@ -125,12 +125,12 @@ async def command(req: CommandRequest) -> CommandResponse:
 
     audio_b64 = None
     if req.speak and result.response_text:
-        try:
-            wav = await tts.synthesize(result.response_text)
-            if wav:
-                audio_b64 = base64.b64encode(wav).decode("ascii")
-        except Exception:  # noqa: BLE001 - TTS is non-critical
-            log.exception("TTS failed; returning without audio")
+        # Ship-command acks use the fast Piper engine; chat/knowledge replies use the
+        # higher-quality Chatterbox engine. synthesize() fails soft (returns None).
+        route = "chat" if result.intent in {"chat", *app.state.knowledge.intents} else "ack"
+        wav = await tts.synthesize(result.response_text, route=route)
+        if wav:
+            audio_b64 = base64.b64encode(wav).decode("ascii")
 
     log.info("cmd: %r -> intent=%s key=%s confirm=%s",
              req.text, result.intent, keybind, confirm_required)
@@ -148,13 +148,10 @@ async def command(req: CommandRequest) -> CommandResponse:
 # --- Speak arbitrary text (TTS only, no intent parsing) --------------------
 @app.post("/speak", response_model=SpeakResponse)
 async def speak(req: SpeakRequest) -> SpeakResponse:
-    audio_b64 = None
-    try:
-        wav = await app.state.tts.synthesize(req.text)
-        if wav:
-            audio_b64 = base64.b64encode(wav).decode("ascii")
-    except Exception:  # noqa: BLE001 - TTS non-critical
-        log.exception("TTS failed in /speak")
+    # route defaults to "chat" (Chatterbox); the client sends "ack" for command
+    # feedback like "Confirmed."/"Cancelled." so those bark via fast Piper.
+    wav = await app.state.tts.synthesize(req.text, route=req.route)
+    audio_b64 = base64.b64encode(wav).decode("ascii") if wav else None
     return SpeakResponse(text=req.text, audio=audio_b64)
 
 
@@ -235,11 +232,14 @@ async def delete_command(intent: str) -> None:
 async def health() -> HealthResponse:
     cfg = app.state.cfg
     llm_ok = await app.state.llm.health()
+    tts = app.state.tts
+    tts_ready = await tts.check_ready()  # probes both engines; returns ack-engine readiness
     return HealthResponse(
         status="ok" if llm_ok else "degraded",
         provider=cfg.llm.provider,
         model=cfg.llm.model,
         llm_reachable=llm_ok,
-        tts_ready=await app.state.tts.check_ready(),
-        tts_engine=app.state.tts.engine,
+        tts_ready=tts_ready,
+        tts_chat_ready=tts.chat_ready(),
+        tts_engine=tts.engine,
     )

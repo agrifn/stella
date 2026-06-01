@@ -15,6 +15,7 @@ class CommandRequest(BaseModel):
 class SpeakRequest(BaseModel):
     """Ask the server to synthesize arbitrary text (no intent parsing)."""
     text: str = Field(..., min_length=1)
+    route: str = Field("chat", description="'ack' -> fast Piper, 'chat' -> Chatterbox")
 
 
 class SpeakResponse(BaseModel):
@@ -55,8 +56,9 @@ class HealthResponse(BaseModel):
     provider: str
     model: str
     llm_reachable: bool
-    tts_ready: bool
-    tts_engine: str = "piper"  # "piper" (built-in) or "chatterbox" (host service)
+    tts_ready: bool                    # ACK engine ready (command path is the critical one)
+    tts_chat_ready: bool = True        # chat engine ready (chat/knowledge replies)
+    tts_engine: str = "piper"          # "ack=<engine>,chat=<engine>" summary
 
 
 # --- Command management (CRUD) ---------------------------------------------

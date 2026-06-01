@@ -51,10 +51,11 @@ class CommandSender:
             sequence=d.get("sequence") or [],
         )
 
-    def speak(self, text: str) -> Optional[str]:
-        """Get TTS audio (base64 WAV) for arbitrary text, no intent parsing."""
+    def speak(self, text: str, route: str = "chat") -> Optional[str]:
+        """Get TTS audio (base64 WAV) for text. route='ack' -> fast Piper (command
+        feedback), route='chat' -> Chatterbox (chat/knowledge replies)."""
         try:
-            r = self._session.post(f"{self._url}/speak", json={"text": text},
+            r = self._session.post(f"{self._url}/speak", json={"text": text, "route": route},
                                    timeout=self._timeout)
             r.raise_for_status()
             return r.json().get("audio")
