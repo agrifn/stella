@@ -26,10 +26,12 @@ log = logging.getLogger("stella.tts")
 
 _HF_BASE = "https://huggingface.co/rhasspy/piper-voices/resolve/main"
 
-# Strict Piper voice name, e.g. en_US-lessac-medium. Validated BEFORE any URL build
-# or file write so a name like '../../x' can never traverse the voices dir or the
-# upstream path (the /voices/download endpoint is unauthenticated).
-_VOICE_RE = re.compile(r"^[a-z]{2}_[A-Z]{2}-[a-z0-9_]+-(x_low|low|medium|high)$")
+# A voice name is used to build file paths and the download URL, so it must not be
+# able to traverse out (no '/', '\', '.' -> blocks '..', absolute and nested paths).
+# Letters/digits/underscore/hyphen covers both Piper names (en_US-lessac-medium) and
+# custom installed voices (e.g. cortana). The /voices/download endpoint is unauth'd,
+# so this is validated BEFORE any path build or file write.
+_VOICE_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 def _validate_voice_name(voice: str) -> None:
