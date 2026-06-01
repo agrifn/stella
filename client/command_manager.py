@@ -233,16 +233,22 @@ class MainWindow(QMainWindow):
         voice.addWidget(QLabel("Voice:"))
         self.voice_combo = QComboBox()
         self.voice_combo.setMinimumWidth(220)
-        b_set = QPushButton("Set")
-        b_set.clicked.connect(self.set_voice)
-        b_test = QPushButton("Test")
-        b_test.clicked.connect(self.test_voice)
-        b_add = QPushButton("Add voice...")
-        b_add.clicked.connect(self.add_voice)
+        self.b_set = QPushButton("Set")
+        self.b_set.clicked.connect(self.set_voice)
+        self.b_test = QPushButton("Test")
+        self.b_test.clicked.connect(self.test_voice)
+        self.b_add = QPushButton("Add voice...")
+        self.b_add.clicked.connect(self.add_voice)
         voice.addWidget(self.voice_combo, 1)
-        for b in (b_set, b_test, b_add):
+        for b in (self.b_set, self.b_test, self.b_add):
             voice.addWidget(b)
         root.addLayout(voice)
+        # The voice catalog is Piper-only; _apply_engine() greys it out + explains
+        # when a different TTS engine (e.g. chatterbox) is active.
+        self.voice_note = QLabel("")
+        self.voice_note.setStyleSheet("color: #888;")
+        self.voice_note.setWordWrap(True)
+        root.addWidget(self.voice_note)
 
         self.statusBar().showMessage("Loading...")
         self.reload()
@@ -328,9 +334,25 @@ class MainWindow(QMainWindow):
                     "yes" if c.get("hold") else "", c.get("description", "")]
             for col, v in enumerate(vals):
                 self.table.setItem(r, col, QTableWidgetItem(str(v)))
+        engine = health.get("tts_engine", "piper")
         self.statusBar().showMessage(
             f"{len(cmds)} commands  |  {health.get('provider')}:{health.get('model')}  "
-            f"llm={'up' if health.get('llm_reachable') else 'down'}")
+            f"llm={'up' if health.get('llm_reachable') else 'down'}  "
+            f"tts={engine}{'' if health.get('tts_ready') else ' (not ready)'}")
+        self._apply_engine(engine)
+
+    def _apply_engine(self, engine: str):
+        """The voice catalog is for the built-in Piper engine only. When a different
+        engine (e.g. chatterbox) is active, grey the catalog out and explain why."""
+        is_piper = engine == "piper"
+        for w in (self.voice_combo, self.b_set, self.b_test, self.b_add):
+            w.setEnabled(is_piper)
+        if is_piper:
+            self.voice_note.setText("Piper voice catalog (the built-in TTS engine).")
+        else:
+            self.voice_note.setText(
+                f"TTS engine is '{engine}'. This Piper voice list is inactive; the "
+                f"'{engine}' voice is set on its own service, not here.")
 
     def _selected_intent(self) -> str | None:
         row = self.table.currentRow()

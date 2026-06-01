@@ -56,6 +56,7 @@ class HealthResponse(BaseModel):
     model: str
     llm_reachable: bool
     tts_ready: bool
+    tts_engine: str = "piper"  # "piper" (built-in) or "chatterbox" (host service)
 
 
 # --- Command management (CRUD) ---------------------------------------------

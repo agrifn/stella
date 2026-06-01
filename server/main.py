@@ -241,4 +241,5 @@ async def health() -> HealthResponse:
         model=cfg.llm.model,
         llm_reachable=llm_ok,
         tts_ready=await app.state.tts.check_ready(),
+        tts_engine=app.state.tts.engine,
     )

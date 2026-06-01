@@ -48,6 +48,10 @@ ONE machine (Windows + WSL2, RTX 5090)
   "Launch STELLA" button.
 - **Pluggable LLM:** local Ollama (default), any OpenAI-compatible endpoint, or Anthropic
   - selected in `.env`.
+- **Two TTS engines:** **Piper** (default, built into the API image, manage voices from
+  the GUI) or an optional **Chatterbox** host service for a custom/cloned voice (see
+  [voice/](voice/)). Pick via `STELLA_TTS_ENGINE` in `.env`; `/health` and the GUI show
+  which engine is live. The GUI voice catalog applies to Piper only.
 - **Knowledge lookups (optional):** ask factual questions about ships, locations, and
   commodities ("what's the Guardian MX armor rating", "how fast is a Gladius", "where is
   Crusader", "is laranite mineable"), plus weapon/armor/component **stats** ("what's the
