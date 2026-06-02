@@ -28,16 +28,26 @@ class STTHandler:
     def __init__(self, model_size: str, device: str = "cuda", compute_type: str = "int8"):
         ensure_cuda_dlls()
         from faster_whisper import WhisperModel  # imported after DLL paths are set
+        import ctranslate2
 
         self.samplerate = 16000  # Whisper operates at 16 kHz
+        self.model_size = model_size
+        log.debug("STT init: requested device=%s compute_type=%s cuda_devices=%d",
+                  device, compute_type, ctranslate2.get_cuda_device_count())
         try:
             self._model = WhisperModel(model_size, device=device, compute_type=compute_type)
             self.device = device
         except Exception as e:  # noqa: BLE001 - fall back to CPU so STT still works
-            log.warning("CUDA Whisper init failed (%s); falling back to CPU int8", e)
-            self._model = WhisperModel(model_size, device="cpu", compute_type="int8")
-            self.device = "cpu"
+            log.warning("CUDA Whisper init failed (%s: %s); falling back to CPU int8",
+                        type(e).__name__, e)
+            self._load_cpu_model()
         log.info("Whisper '%s' ready on %s", model_size, self.device)
+
+    def _load_cpu_model(self) -> None:
+        from faster_whisper import WhisperModel
+
+        self._model = WhisperModel(self.model_size, device="cpu", compute_type="int8")
+        self.device = "cpu"
 
     def warm(self) -> None:
         """Run one inference so the first real transcription isn't slow."""
@@ -52,7 +62,18 @@ class STTHandler:
         # Keep only confident speech segments; Whisper marks noise/silence with a
         # high no_speech_prob and/or very low avg_logprob, then hallucinates text.
         kept = []
-        for seg in segments:
+        try:
+            segment_list = list(segments)
+        except RuntimeError as e:
+            msg = str(e).lower()
+            if self.device != "cpu" and any(s in msg for s in ("cuda", "cublas", "cudnn")):
+                log.warning("CUDA Whisper inference failed (%s); falling back to CPU int8", e)
+                self._load_cpu_model()
+                segments, _info = self._model.transcribe(audio, vad_filter=True, language="en")
+                segment_list = list(segments)
+            else:
+                raise
+        for seg in segment_list:
             if getattr(seg, "no_speech_prob", 0.0) > 0.6:
                 continue
             # Lenient logprob floor: only drop very-low-confidence segments, so a
