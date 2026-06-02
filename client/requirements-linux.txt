@@ -1,0 +1,25 @@
+# STELLA desktop client (Linux/X11 or XWayland, Python 3.10+)
+# Install system packages first, for example on Ubuntu/Debian:
+#   sudo apt install python3-venv portaudio19-dev ydotool xdotool xinput x11-xserver-utils libxcb-cursor0
+# Wayland injection uses ydotool/ydotoold; PTT reads /dev/input/event* directly.
+
+faster-whisper>=1.2
+ctranslate2>=4.7.2,<5.0  # pin major to avoid CUDA ABI breaks
+
+# CUDA runtime libraries for GPU STT (ctranslate2 needs these; the driver alone is not enough).
+# These pip wheels put libcublas/libcudnn into the venv so no separate CUDA toolkit install is needed.
+# x86_64 Linux only — remove these two lines if installing on ARM.
+nvidia-cublas-cu12
+nvidia-cudnn-cu12
+sounddevice>=0.5
+numpy>=2.0
+keyboard>=0.13
+requests>=2.32
+PyQt6
+
+# Optional: pynput gives nicer non-root key-state handling on some X11 desktops,
+# but it builds evdev from source on some distros. Install it manually only if you
+# need it and have build tools/python headers available:
+#   pip install pynput
+# Optional: openwakeword if you enable wake_word_enabled in config/settings.json.
+# openwakeword

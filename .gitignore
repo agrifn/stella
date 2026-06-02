@@ -3,6 +3,7 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .venv/
+.venv-*/
 
 # Secrets and local runtime state (never commit API keys)
 .env

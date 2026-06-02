@@ -14,6 +14,7 @@ from __future__ import annotations
 import ctypes
 import logging
 import os
+import platform
 import threading
 import time
 
@@ -33,6 +34,8 @@ log = logging.getLogger("stella.engine")
 
 
 def is_admin() -> bool:
+    if platform.system() != "Windows":
+        return True  # Linux/macOS use ydotool/evdev; no elevation needed
     try:
         return bool(ctypes.windll.shell32.IsUserAnAdmin())
     except Exception:  # noqa: BLE001
