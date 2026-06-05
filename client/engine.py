@@ -71,6 +71,8 @@ class StellaEngine:
         # run loop captures the following command hands-free (no key). Set from the
         # audio-callback thread, so it only flips a flag (never blocks the audio path).
         self._wake_event = threading.Event()
+        self._wake_lock = threading.Lock()
+        self._wake_mute = 0  # reference count of active muters (capture + ack playback)
         self._wake_listener = None
         if cfg.wake_word_enabled and cfg.wake_word_model and os.path.exists(cfg.wake_word_model):
             try:
@@ -258,15 +260,23 @@ class StellaEngine:
         self._speak_async(res.response_text, route="ack")
 
     def _mute_wake(self, on: bool) -> None:
-        """Pause/resume the wake-word listener (used so STELLA does not hear its own
-        spoken ack and re-trigger itself). On resume, drop any self-trigger that fired."""
+        """Pause/resume the wake-word listener so STELLA does not hear its own ack (or
+        the command it is capturing) and re-trigger. Reference-COUNTED + locked: there
+        are multiple concurrent muters (the capture step and one or more ack-playback
+        threads), so the listener is only re-enabled once every muter has released, and
+        a self-trigger is discarded at that point. A plain boolean here races - a
+        finishing ack could re-enable the listener while another is still playing."""
         if not self._wake_listener:
             return
-        if on:
-            self._wake_listener.set_enabled(False)
-        else:
-            self._wake_event.clear()  # discard any wake fired by our own voice
-            self._wake_listener.set_enabled(True)
+        with self._wake_lock:
+            if on:
+                self._wake_mute += 1
+                self._wake_listener.set_enabled(False)
+            else:
+                self._wake_mute = max(0, self._wake_mute - 1)
+                if self._wake_mute == 0:
+                    self._wake_event.clear()  # drop any wake fired while we were muted
+                    self._wake_listener.set_enabled(True)
 
     def _speak_async(self, text: str, route: str = "chat"):
         """Fetch TTS and play it without blocking the loop (voice trails the action).
@@ -330,16 +340,17 @@ class StellaEngine:
                         on_stop=lambda: self._emit("listening", on=False),
                     )
                 elif self._wake_event.is_set():
-                    # Wake word fired: capture the command hands-free (no key). Pause
-                    # the listener during capture so the command speech can't re-trigger it.
+                    # Wake word fired: capture the command hands-free (no key). Mute the
+                    # listener during capture so the command speech can't re-trigger it
+                    # (ref-counted, shared with ack playback - see _mute_wake).
                     self._wake_event.clear()
-                    if self._wake_listener:
-                        self._wake_listener.set_enabled(False)
+                    self._mute_wake(True)
                     self._emit("listening", on=True)
-                    audio = self.recorder.record_hands_free()
-                    self._emit("listening", on=False)
-                    if self._wake_listener:
-                        self._wake_listener.set_enabled(True)
+                    try:
+                        audio = self.recorder.record_hands_free()
+                    finally:
+                        self._emit("listening", on=False)
+                        self._mute_wake(False)
                 else:
                     time.sleep(0.03)  # idle poll for PTT / wake word
                     continue
