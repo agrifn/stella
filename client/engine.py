@@ -26,6 +26,7 @@ from .command_sender import CommandSender
 from .config import ClientConfig
 from .confirm import is_affirmative
 from .keybind_executor import KeybindExecutor
+from .mode_switch import detect_mode_switch
 from .multicmd import split_commands
 from .stt_handler import STTHandler
 
@@ -65,8 +66,11 @@ class StellaEngine:
         self._wake_key = cfg.wake_key
         self._last_activity = time.time()
 
-        # Optional spoken wake word: a tiny model that taps the mic stream and
-        # wakes STELLA. Only built if enabled and a model file is present.
+        # Optional spoken wake word: a tiny always-on model that taps the mic stream.
+        # Saying "Stella" acts like a push-to-talk press - it fires this event and the
+        # run loop captures the following command hands-free (no key). Set from the
+        # audio-callback thread, so it only flips a flag (never blocks the audio path).
+        self._wake_event = threading.Event()
         self._wake_listener = None
         if cfg.wake_word_enabled and cfg.wake_word_model and os.path.exists(cfg.wake_word_model):
             try:
@@ -74,7 +78,7 @@ class StellaEngine:
                 self._wake_listener = WakeWordListener(
                     cfg.wake_word_model, cfg.wake_word_threshold, cfg.samplerate,
                     on_wake=self._on_wake_word)
-                self._wake_listener.set_enabled(not self.active)  # listen only while asleep
+                self._wake_listener.set_enabled(True)  # always listening (hands-free trigger)
                 self.recorder.set_monitor(self._wake_listener.feed)
             except Exception:  # noqa: BLE001
                 log.exception("wake-word listener init failed; continuing without it")
@@ -91,13 +95,16 @@ class StellaEngine:
         self.mode = "CHAT" if self.mode == "COMMAND" else "COMMAND"
         self._emit("mode", mode=self.mode)
 
+    def set_mode(self, mode: str):
+        if mode in ("CHAT", "COMMAND") and mode != self.mode:
+            self.mode = mode
+            self._emit("mode", mode=self.mode)
+
     # -- wake / sleep -----------------------------------------------------
     def wake(self):
         self._last_activity = time.time()
         if not self.active:
             self.active = True
-            if self._wake_listener:
-                self._wake_listener.set_enabled(False)  # no need to listen for the word while awake
             self._emit("wake_state", active=True)
             self._emit("status", text="awake")
             log.info("STELLA awake")
@@ -105,8 +112,6 @@ class StellaEngine:
     def sleep(self):
         if self.active:
             self.active = False
-            if self._wake_listener:
-                self._wake_listener.set_enabled(True)  # resume listening for the wake word
             self._emit("wake_state", active=False)
             self._emit("status", text=f"asleep - {self._wake_key} to wake")
             log.info("STELLA asleep")
@@ -122,9 +127,13 @@ class StellaEngine:
         log.info("auto-sleep %s", "on" if on else "off")
 
     def _on_wake_word(self):
+        # "Stella" heard: behave like a PTT press. Wake if asleep, and signal the run
+        # loop to capture the following command hands-free. Runs on the audio thread,
+        # so it must only flip the flag - never block.
+        self._last_activity = time.time()
         if not self.active:
-            log.info("wake word -> waking")
             self.wake()
+        self._wake_event.set()
 
     def _auto_sleep_loop(self, should_stop):
         """Background watchdog: return to sleep after a stretch of inactivity."""
@@ -174,6 +183,17 @@ class StellaEngine:
         self._emit("transcript", text=text)
         log.info("audio %.1fs | STT %.2fs (%s) -> %r", dur, t_stt, self.stt.device, text)
         if not text:
+            return
+
+        # Voice mode switch ("switch to chat" / "command mode") - handled before the
+        # mode branch so it works from EITHER mode.
+        target = detect_mode_switch(text)
+        if target:
+            if target != self.mode:
+                self.set_mode(target)
+                self._speak_async(f"{target.capitalize()} mode.", route="ack")
+            else:
+                self._speak_async(f"Already in {target.lower()} mode.", route="ack")
             return
 
         if self.mode == "CHAT":
@@ -237,6 +257,17 @@ class StellaEngine:
         self._emit("status", text=f"STT {t_stt:.1f}s | LLM {t_srv:.1f}s | {dur:.0f}s audio")
         self._speak_async(res.response_text, route="ack")
 
+    def _mute_wake(self, on: bool) -> None:
+        """Pause/resume the wake-word listener (used so STELLA does not hear its own
+        spoken ack and re-trigger itself). On resume, drop any self-trigger that fired."""
+        if not self._wake_listener:
+            return
+        if on:
+            self._wake_listener.set_enabled(False)
+        else:
+            self._wake_event.clear()  # discard any wake fired by our own voice
+            self._wake_listener.set_enabled(True)
+
     def _speak_async(self, text: str, route: str = "chat"):
         """Fetch TTS and play it without blocking the loop (voice trails the action).
         route='ack' -> fast Piper (command feedback); 'chat' -> Chatterbox."""
@@ -244,16 +275,26 @@ class StellaEngine:
             return
         def run():
             audio = self.sender.speak(text, route)
-            if audio:
-                self.player.play_b64(audio, blocking=False)
+            if not audio:
+                return
+            self._mute_wake(True)  # don't let our own voice trip the wake word
+            try:
+                self.player.play_b64(audio, blocking=True)  # block in THIS thread only
+            finally:
+                self._mute_wake(False)
         threading.Thread(target=run, daemon=True).start()
 
     def _speak_blocking(self, text: str, route: str = "chat"):
         if not text:
             return
         audio = self.sender.speak(text, route)
-        if audio:
+        if not audio:
+            return
+        self._mute_wake(True)
+        try:
             self.player.play_b64(audio, blocking=True)
+        finally:
+            self._mute_wake(False)
 
     def _execute(self, res, count: int = 1):
         count = max(1, count)
@@ -281,13 +322,30 @@ class StellaEngine:
                              daemon=True).start()
         try:
             while not should_stop():
-                audio = self.recorder.record_once(
-                    on_start=lambda: self._emit("listening", on=True),
-                    on_stop=lambda: self._emit("listening", on=False),
-                )
+                audio = None
+                if self.recorder.ptt_pressed():
+                    # Push-to-talk: record while the key is held.
+                    audio = self.recorder.capture_ptt(
+                        on_start=lambda: self._emit("listening", on=True),
+                        on_stop=lambda: self._emit("listening", on=False),
+                    )
+                elif self._wake_event.is_set():
+                    # Wake word fired: capture the command hands-free (no key). Pause
+                    # the listener during capture so the command speech can't re-trigger it.
+                    self._wake_event.clear()
+                    if self._wake_listener:
+                        self._wake_listener.set_enabled(False)
+                    self._emit("listening", on=True)
+                    audio = self.recorder.record_hands_free()
+                    self._emit("listening", on=False)
+                    if self._wake_listener:
+                        self._wake_listener.set_enabled(True)
+                else:
+                    time.sleep(0.03)  # idle poll for PTT / wake word
+                    continue
                 if should_stop():
                     break
-                if len(audio) > 0:
+                if audio is not None and len(audio) > 0:
                     self.process(audio)
         finally:
             self.recorder.close()

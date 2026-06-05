@@ -99,6 +99,72 @@ class PTTRecorder:
             return np.zeros(0, dtype=np.float32)
         return np.concatenate(self._frames, axis=0).reshape(-1)
 
+    def ptt_pressed(self) -> bool:
+        return keyboard.is_pressed(self.ptt_key)
+
+    def capture_ptt(self, on_start=None, on_stop=None) -> np.ndarray:
+        """Record while PTT is held (assumes it's already down). Returns the audio.
+        Same capture as record_once but without the initial wait-for-press, so the
+        engine loop can poll for either PTT or the wake word and act on whichever."""
+        self.open()
+        self._frames = []
+        self._recording.set()
+        if on_start:
+            on_start()
+        while keyboard.is_pressed(self.ptt_key):
+            sd.sleep(20)
+        self._recording.clear()
+        if on_stop:
+            on_stop()
+        if not self._frames:
+            return np.zeros(0, dtype=np.float32)
+        return np.concatenate(self._frames, axis=0).reshape(-1)
+
+    def record_hands_free(self, on_start=None, on_stop=None, max_s: float = 6.0,
+                          silence_s: float = 0.8, start_grace_s: float = 2.5,
+                          rms_gate: float = 0.008) -> np.ndarray:
+        """Capture one utterance WITHOUT push-to-talk (used after a wake word).
+
+        Starts recording immediately, then stops after `silence_s` of trailing
+        silence once speech has been heard, or at `max_s`. If no speech arrives
+        within `start_grace_s` (a bare wake word, or a false trigger in quiet),
+        returns empty so nothing is processed.
+        """
+        self.open()
+        self._frames = []
+        self._recording.set()
+        if on_start:
+            on_start()
+        t0 = time.monotonic()
+        last_voice = t0
+        speech = False
+        try:
+            while True:
+                sd.sleep(50)
+                now = time.monotonic()
+                tail = self._frames[-8:]
+                if tail:
+                    a = np.concatenate(tail, axis=0).reshape(-1)
+                    rms = float(np.sqrt(np.mean(np.square(a)))) if len(a) else 0.0
+                else:
+                    rms = 0.0
+                if rms >= rms_gate:
+                    speech = True
+                    last_voice = now
+                if now - t0 >= max_s:
+                    break
+                if not speech and now - t0 >= start_grace_s:
+                    break
+                if speech and now - last_voice >= silence_s:
+                    break
+        finally:
+            self._recording.clear()
+            if on_stop:
+                on_stop()
+        if not self._frames:
+            return np.zeros(0, dtype=np.float32)
+        return np.concatenate(self._frames, axis=0).reshape(-1)
+
     def loop(self, on_utterance: Callable[[np.ndarray], None]) -> None:
         """Continuously capture PTT utterances and hand each to on_utterance."""
         self.open()
