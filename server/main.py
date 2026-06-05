@@ -1,14 +1,14 @@
 """STELLA server: FastAPI app exposing /command, /health, and /commands CRUD.
 
 Flow for /command:
-  text -> LLMHandler.parse_intent -> IntentResult (intent + spoken text)
+  text -> IntentClassifier.classify -> (intent, confidence)
        -> CommandRegistry.resolve(intent) -> concrete key + confirm flag
-       -> TTSHandler.synthesize(response_text) -> WAV
+       -> TTSHandler.synthesize(ack) -> WAV
        -> CommandResponse (intent, keybind, confirm_required, response_text, audio)
 
 The /commands endpoints manage the command set at runtime (used by the GUI).
-Because the LLM prompt is generated from the registry on every request, adding or
-editing a command immediately changes what the model can recognize.
+Because the classifier is rebuilt from the registry on every edit, adding or
+editing a command immediately changes what it can recognize.
 """
 from __future__ import annotations
 

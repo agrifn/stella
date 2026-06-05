@@ -24,13 +24,6 @@ class SpeakResponse(BaseModel):
     audio_format: str = "wav"
 
 
-class IntentResult(BaseModel):
-    """What the LLM returns (keybind is NOT trusted from the model)."""
-    intent: str
-    confirm_required: bool = False
-    response_text: str = ""
-
-
 class MacroStep(BaseModel):
     """One step of a macro sequence."""
     key: str

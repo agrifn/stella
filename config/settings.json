@@ -1,27 +1,18 @@
 {
-  "_comment": "Global settings shared conceptually by client and server. The server reads the 'server' and 'llm'/'tts' sections; the client reads 'server_url', hotkeys, and mode.",
+  "_comment": "Global settings shared conceptually by client and server. The server reads the 'server', 'tts', and 'classifier' sections; the client reads 'server_url', hotkeys, and mode.",
   "server": {
     "host": "0.0.0.0",
     "port": 8420
   },
   "server_url": "http://127.0.0.1:8420",
-  "llm": {
-    "provider": "ollama",
-    "ollama_url": "http://127.0.0.1:11434",
-    "model": "llama3.2:3b",
-    "temperature": 0.0,
-    "num_ctx": 4096,
-    "keep_alive": "24h",
-    "base_url": null,
-    "api_key": null
-  },
   "tts": {
     "enabled": true,
     "voice": "en_US-lessac-medium",
     "sample_rate": 22050
   },
-  "knowledge": {
-    "enabled": false
+  "classifier": {
+    "model": "minishlab/potion-base-32M",
+    "reject_threshold": 0.45
   },
   "client": {
     "ptt_key": "right ctrl",
