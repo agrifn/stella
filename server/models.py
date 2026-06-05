@@ -71,8 +71,9 @@ class CommandModel(BaseModel):
     hold: bool = Field(False, description="Hold the key rather than tap it")
     hold_duration: Optional[float] = Field(None, description="Seconds to hold (None = client default)")
     sequence: list[MacroStep] = Field(default_factory=list, description="Macro steps (overrides key)")
-    description: str = Field("", description="What this command does (shown to the LLM)")
-    examples: list[str] = Field(default_factory=list, description="Sample phrases for the LLM")
+    description: str = Field("", description="What this command does")
+    examples: list[str] = Field(default_factory=list, description="Sample phrases (classifier training)")
+    ack: str = Field("", description="Canned spoken acknowledgement")
 
 
 class VoicesResponse(BaseModel):
@@ -93,3 +94,4 @@ class CommandUpdate(BaseModel):
     sequence: Optional[list[MacroStep]] = None
     description: Optional[str] = None
     examples: Optional[list[str]] = None
+    ack: Optional[str] = None

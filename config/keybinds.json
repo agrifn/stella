@@ -10,7 +10,8 @@
         "coupled mode",
         "decoupled mode",
         "toggle decouple"
-      ]
+      ],
+      "ack": "Decoupling."
     },
     "cruise_control_toggle": {
       "key": "altleft+c",
@@ -21,7 +22,8 @@
         "toggle cruise",
         "cruise on",
         "cruise off"
-      ]
+      ],
+      "ack": "Cruise control."
     },
     "vtol_toggle": {
       "key": "k",
@@ -32,7 +34,8 @@
         "vtol mode",
         "hover mode",
         "toggle vtol"
-      ]
+      ],
+      "ack": "V-TOL."
     },
     "landing_gear": {
       "key": "n",
@@ -43,7 +46,8 @@
         "gear up",
         "gear down",
         "toggle gear"
-      ]
+      ],
+      "ack": "Landing gear."
     },
     "request_landing": {
       "key": "altleft+n",
@@ -54,7 +58,8 @@
         "request permission to land",
         "hail tower",
         "ask for landing"
-      ]
+      ],
+      "ack": "Requesting landing."
     },
     "nav_mode": {
       "key": "b",
@@ -66,7 +71,8 @@
         "quantum mode",
         "navigation mode",
         "open quantum"
-      ]
+      ],
+      "ack": "Quantum mode."
     },
     "power_toggle_all": {
       "key": "u",
@@ -77,7 +83,8 @@
         "power off",
         "all power",
         "toggle power"
-      ]
+      ],
+      "ack": "All power."
     },
     "systems_ready": {
       "key": "altright+r",
@@ -88,7 +95,8 @@
         "flight ready",
         "preflight",
         "ready up"
-      ]
+      ],
+      "ack": "Systems ready."
     },
     "weapons_power_toggle": {
       "key": "p",
@@ -98,7 +106,8 @@
         "weapons on",
         "weapons off",
         "arm weapons"
-      ]
+      ],
+      "ack": "Weapons power."
     },
     "shields_power_toggle": {
       "key": "o",
@@ -108,7 +117,8 @@
         "shields on",
         "shields off",
         "toggle shields"
-      ]
+      ],
+      "ack": "Shields power."
     },
     "thrusters_power_toggle": {
       "key": "i",
@@ -118,7 +128,8 @@
         "engines on",
         "engines off",
         "toggle engines"
-      ]
+      ],
+      "ack": "Thruster power."
     },
     "reset_power": {
       "key": "f8",
@@ -129,7 +140,8 @@
         "balance power",
         "default power",
         "equalize power"
-      ]
+      ],
+      "ack": "Power balanced."
     },
     "weapons_power_max": {
       "key": "f5",
@@ -144,7 +156,8 @@
         "weapons to max",
         "full power to weapons",
         "all power to weapons"
-      ]
+      ],
+      "ack": "Weapons to max."
     },
     "engines_power_max": {
       "key": "f6",
@@ -159,7 +172,8 @@
         "engines to max",
         "full power to engines",
         "all power to engines"
-      ]
+      ],
+      "ack": "Engines to max."
     },
     "shields_power_max": {
       "key": "f7",
@@ -174,7 +188,8 @@
         "shields to max",
         "full power to shields",
         "all power to shields"
-      ]
+      ],
+      "ack": "Shields to max."
     },
     "unlock_target": {
       "key": "altleft+t",
@@ -185,7 +200,8 @@
         "clear target",
         "release target",
         "drop target"
-      ]
+      ],
+      "ack": "Target released."
     },
     "gimbal_cycle": {
       "key": "g",
@@ -197,7 +213,8 @@
         "gimbal mode",
         "switch gimbal",
         "next gimbal mode"
-      ]
+      ],
+      "ack": "Gimbal mode."
     },
     "decoy_burst": {
       "key": "h",
@@ -214,7 +231,8 @@
         "countermeasures",
         "release countermeasures",
         "decoys"
-      ]
+      ],
+      "ack": "Countermeasures away."
     },
     "scan_mode": {
       "key": "v",
@@ -225,7 +243,8 @@
         "scanning mode",
         "start scanning",
         "begin scan"
-      ]
+      ],
+      "ack": "Scanning."
     },
     "ping": {
       "key": "tab",
@@ -236,7 +255,8 @@
         "radar ping",
         "pulse radar",
         "scan ping"
-      ]
+      ],
+      "ack": "Pinging."
     },
     "mfd_cycle_forward": {
       "key": "altleft+e",
@@ -247,7 +267,8 @@
         "next display",
         "cycle mfd",
         "next page"
-      ]
+      ],
+      "ack": "Next display."
     },
     "mfd_cycle_back": {
       "key": "altleft+q",
@@ -258,7 +279,8 @@
         "previous display",
         "mfd back",
         "last page"
-      ]
+      ],
+      "ack": "Previous display."
     },
     "exit_seat": {
       "key": "y",
@@ -270,7 +292,8 @@
         "get up",
         "leave seat",
         "stand up"
-      ]
+      ],
+      "ack": "Leaving the seat."
     },
     "look_behind": {
       "key": "comma",
@@ -281,7 +304,8 @@
         "rear view",
         "check six",
         "look back"
-      ]
+      ],
+      "ack": "Looking behind."
     },
     "headlights": {
       "key": "l",
@@ -292,7 +316,8 @@
         "headlights",
         "lights on",
         "lights off"
-      ]
+      ],
+      "ack": "Lights."
     },
     "mobiglas": {
       "key": "f1",
@@ -302,7 +327,8 @@
         "mobiglas",
         "open mobiglas",
         "mobi"
-      ]
+      ],
+      "ack": "Mobiglas."
     },
     "comms": {
       "key": "f11",
@@ -313,7 +339,8 @@
         "commlink",
         "open comms",
         "communications"
-      ]
+      ],
+      "ack": "Comms."
     },
     "starmap": {
       "key": "f2",
@@ -324,7 +351,8 @@
         "open map",
         "show map",
         "navigation map"
-      ]
+      ],
+      "ack": "Starmap."
     },
     "camera_cycle": {
       "key": "f4",
@@ -335,7 +363,8 @@
         "third person",
         "first person",
         "switch camera"
-      ]
+      ],
+      "ack": "Camera."
     },
     "eject": {
       "key": "altright+y",
@@ -346,7 +375,8 @@
         "eject eject eject",
         "punch out",
         "bail out"
-      ]
+      ],
+      "ack": "Ejecting."
     },
     "self_destruct": {
       "key": "backspace",
@@ -358,7 +388,8 @@
         "scuttle ship",
         "destroy ship",
         "blow it up"
-      ]
+      ],
+      "ack": "Self destruct."
     },
     "lower_shields_min": {
       "key": "alt+f7",
@@ -372,7 +403,8 @@
         "minimum shields",
         "kill shield power",
         "shields to zero"
-      ]
+      ],
+      "ack": "Shields minimum."
     },
     "lower_engine_min": {
       "key": "alt+f6",
@@ -386,7 +418,8 @@
         "cut engine power",
         "kill engines",
         "engines to zero"
-      ]
+      ],
+      "ack": "Engines minimum."
     },
     "lower_weapons_min": {
       "key": "alt+f5",
@@ -401,7 +434,8 @@
         "cut weapon power",
         "kill weapons",
         "weapons to zero"
-      ]
+      ],
+      "ack": "Weapons minimum."
     },
     "weapons_power_inc": {
       "key": "f5",
@@ -414,7 +448,8 @@
         "add weapons",
         "more power to guns",
         "raise weapons"
-      ]
+      ],
+      "ack": "More weapons."
     },
     "engines_power_inc": {
       "key": "f6",
@@ -427,7 +462,8 @@
         "more power to engines",
         "raise engines",
         "raise engine power"
-      ]
+      ],
+      "ack": "More engines."
     },
     "shields_power_inc": {
       "key": "f7",
@@ -439,7 +475,8 @@
         "add shields",
         "more power to shields",
         "raise shields"
-      ]
+      ],
+      "ack": "More shields."
     },
     "weapons_power_dec": {
       "key": "alt+f5",
@@ -451,7 +488,8 @@
         "less weapon power",
         "fewer guns",
         "ease off weapons"
-      ]
+      ],
+      "ack": "Less weapons."
     },
     "engines_power_dec": {
       "key": "alt+f6",
@@ -463,7 +501,8 @@
         "fewer engines",
         "ease off engines",
         "back off engines"
-      ]
+      ],
+      "ack": "Less engines."
     },
     "shields_power_dec": {
       "key": "alt+f7",
@@ -474,7 +513,8 @@
         "less shield power",
         "fewer shields",
         "ease off shields"
-      ]
+      ],
+      "ack": "Less shields."
     }
   }
 }

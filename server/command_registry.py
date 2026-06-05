@@ -38,6 +38,9 @@ class Command:
     hold_duration: Optional[float] = None
     description: str = ""
     examples: list[str] = field(default_factory=list)
+    # Canned spoken acknowledgement (the embedding classifier does not generate text,
+    # so each command carries its own short ack, e.g. "Shields to max").
+    ack: str = ""
     # Macro: an ordered list of steps to run instead of a single key. Each step:
     # {"key": "f7", "hold": false, "taps": 1, "delay": 0.1}. When non-empty, this
     # command is a macro and `key` is ignored.
@@ -52,6 +55,8 @@ class Command:
         d["description"] = self.description
         if self.examples:
             d["examples"] = list(self.examples)
+        if self.ack:
+            d["ack"] = self.ack
         if self.sequence:
             d["sequence"] = [dict(s) for s in self.sequence]
         return d
@@ -67,6 +72,7 @@ class Command:
             description=spec.get("description", ""),
             examples=list(spec.get("examples", []) or []),
             sequence=list(spec.get("sequence", []) or []),
+            ack=spec.get("ack", ""),
         )
 
 
