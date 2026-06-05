@@ -14,6 +14,10 @@ WORKDIR /app
 COPY server/requirements.txt /app/server/requirements.txt
 RUN pip install --no-cache-dir -r /app/server/requirements.txt
 
+# Bake the embedding classifier model into the image so startup needs no network.
+ARG CLASSIFIER_MODEL=minishlab/potion-base-32M
+RUN python -c "from model2vec import StaticModel; StaticModel.from_pretrained('${CLASSIFIER_MODEL}')"
+
 COPY server/ /app/server/
 COPY config/ /app/config/
 RUN sed -i 's/\r$//' /app/server/entrypoint.sh  # tolerate CRLF from Windows

@@ -73,6 +73,9 @@ class ServerConfig:
     llm: LLMConfig = field(default_factory=LLMConfig)
     tts: TTSConfig = field(default_factory=TTSConfig)
     knowledge: KnowledgeConfig = field(default_factory=KnowledgeConfig)
+    # Embedding intent classifier (the LLM-free intent engine).
+    classifier_model: str = "minishlab/potion-base-32M"
+    classifier_reject: float = 0.45  # below this cosine -> 'chat' (not a command)
     # Optional shared secret (STELLA_API_TOKEN). When set, every route except
     # /health requires 'Authorization: Bearer <token>'. Unset = open (local use).
     api_token: str | None = None
@@ -122,11 +125,14 @@ def load_config(settings_path: Path | None = None) -> ServerConfig:
         uex_base=_env("STELLA_UEX_BASE", know.get("uex_base", KnowledgeConfig.uex_base)),
     )
 
+    clf = data.get("classifier", {})
     return ServerConfig(
         host=_env("STELLA_HOST", srv.get("host", ServerConfig.host)),
         port=int(_env("STELLA_PORT", srv.get("port", ServerConfig.port))),
         llm=llm_cfg,
         tts=tts_cfg,
         knowledge=knowledge_cfg,
+        classifier_model=_env("STELLA_CLASSIFIER_MODEL", clf.get("model", ServerConfig.classifier_model)),
+        classifier_reject=float(clf.get("reject_threshold", ServerConfig.classifier_reject)),
         api_token=_env("STELLA_API_TOKEN", srv.get("api_token")),
     )

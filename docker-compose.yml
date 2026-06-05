@@ -1,28 +1,9 @@
-# STELLA backend stack: Ollama (the LLM, on GPU) + the STELLA API (intent + Piper TTS).
-# The native Windows client talks to the API at http://localhost:8420.
+# STELLA backend: a single FastAPI container (local embedding intent classifier + Piper
+# TTS). No Ollama / LLM, no GPU needed. The native Windows client talks to it at
+# http://localhost:8420.
 #
 #   docker compose up -d --build
-#   docker compose exec ollama ollama pull llama3.2:3b   # first time
-#
-# Provider/keys come from a .env file (see .env.example). To use an external LLM
-# instead of the local Ollama, set STELLA_LLM_PROVIDER/MODEL/KEY in .env.
 services:
-  ollama:
-    image: ollama/ollama
-    container_name: stella-ollama
-    restart: unless-stopped
-    volumes:
-      - ollama:/root/.ollama
-    networks: [stella]
-    # GPU passthrough (needs nvidia-container-toolkit on the Docker host).
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
-
   stella-api:
     build:
       context: .
@@ -30,25 +11,18 @@ services:
     image: stella-api
     container_name: stella-api
     restart: unless-stopped
-    depends_on: [ollama]
-    # Reach the host-side Chatterbox TTS service (chatterbox-tts.service on :8123).
+    # Optional: reach a host-side Chatterbox TTS service if the chat engine is set to it.
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
-      STELLA_LLM_PROVIDER: ${STELLA_LLM_PROVIDER:-ollama}
-      STELLA_OLLAMA_URL: http://ollama:11434
-      STELLA_LLM_MODEL: ${STELLA_LLM_MODEL:-llama3.2:3b}
-      STELLA_LLM_BASE_URL: ${STELLA_LLM_BASE_URL:-}
-      STELLA_LLM_API_KEY: ${STELLA_LLM_API_KEY:-}
-      # UEX Corp API token for "where to buy" item/weapon lookups (optional).
-      STELLA_UEX_TOKEN: ${STELLA_UEX_TOKEN:-}
       # Optional shared secret; when set, every route except /health needs a Bearer token.
       STELLA_API_TOKEN: ${STELLA_API_TOKEN:-}
-      # Hybrid TTS: fast Piper for command acks, Chatterbox (host service) for chat/
-      # knowledge replies. Either can be set to "piper" or "chatterbox". STELLA_TTS_ENGINE
-      # is the legacy single-engine fallback for the chat route.
+      # Intent engine: static embedding classifier (CPU, numpy-only). No LLM.
+      STELLA_CLASSIFIER_MODEL: ${STELLA_CLASSIFIER_MODEL:-minishlab/potion-base-32M}
+      # TTS: Piper-only by default (self-contained). Set a *_CHAT_ENGINE to chatterbox
+      # only if you run the optional host-side Chatterbox service on :8123.
       STELLA_TTS_ACK_ENGINE: ${STELLA_TTS_ACK_ENGINE:-piper}
-      STELLA_TTS_CHAT_ENGINE: ${STELLA_TTS_CHAT_ENGINE:-chatterbox}
+      STELLA_TTS_CHAT_ENGINE: ${STELLA_TTS_CHAT_ENGINE:-piper}
       STELLA_TTS_ENGINE: ${STELLA_TTS_ENGINE:-piper}
       STELLA_CHATTERBOX_URL: ${STELLA_CHATTERBOX_URL:-http://host.docker.internal:8123}
     ports:
@@ -64,5 +38,4 @@ networks:
   stella:
 
 volumes:
-  ollama:
   voices:
