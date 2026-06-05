@@ -25,10 +25,13 @@ _HALLUCINATIONS = {
 
 
 class STTHandler:
-    def __init__(self, model_size: str, device: str = "cuda", compute_type: str = "int8"):
+    def __init__(self, model_size: str, device: str = "cuda", compute_type: str = "int8",
+                 no_speech_prob: float = 0.6, avg_logprob: float = -1.3):
         ensure_cuda_dlls()
         from faster_whisper import WhisperModel  # imported after DLL paths are set
 
+        self._max_no_speech = no_speech_prob   # drop segments noisier than this
+        self._min_logprob = avg_logprob        # drop segments less confident than this
         self.samplerate = 16000  # Whisper operates at 16 kHz
         try:
             self._model = WhisperModel(model_size, device=device, compute_type=compute_type)
@@ -53,12 +56,12 @@ class STTHandler:
         # high no_speech_prob and/or very low avg_logprob, then hallucinates text.
         kept = []
         for seg in segments:
-            if getattr(seg, "no_speech_prob", 0.0) > 0.6:
+            if getattr(seg, "no_speech_prob", 0.0) > self._max_no_speech:
                 continue
             # Lenient logprob floor: only drop very-low-confidence segments, so a
             # quiet/accented real command is kept (the stoplist still catches the
             # common silence hallucinations below).
-            if getattr(seg, "avg_logprob", 0.0) < -1.3:
+            if getattr(seg, "avg_logprob", 0.0) < self._min_logprob:
                 continue
             kept.append(seg.text)
         text = " ".join(kept).strip()

@@ -47,7 +47,8 @@ class StellaEngine:
         self.mode = cfg.default_mode.upper()
         do_exec = cfg.execute_keys if execute_keys is None else execute_keys
 
-        self.stt = STTHandler(cfg.whisper_model, cfg.whisper_device, cfg.whisper_compute_type)
+        self.stt = STTHandler(cfg.whisper_model, cfg.whisper_device, cfg.whisper_compute_type,
+                              no_speech_prob=cfg.stt_no_speech_prob, avg_logprob=cfg.stt_avg_logprob)
         self.sender = CommandSender(cfg.server_url, cfg.api_token)
         self.player = AudioPlayer(cfg.output_device)
         self.executor = KeybindExecutor(hold_duration=cfg.hold_duration, enabled=do_exec)
@@ -159,7 +160,7 @@ class StellaEngine:
         # Warn if we'll try to send keys but aren't elevated (EAC/SC run elevated,
         # so a non-admin process can't inject input into them).
         if self.executor.enabled and not is_admin():
-            self._emit("status", text="WARNING: not admin - keys may not reach Star Citizen")
+            self._emit("warn", text="NOT ELEVATED - keys may not reach the game (run as admin)")
         self._emit("mode", mode=self.mode)
         self._emit("wake_state", active=self.active)
         self._emit("status", text="ready" if self.active else f"asleep - {self._wake_key} to wake")
@@ -347,7 +348,12 @@ class StellaEngine:
                     self._mute_wake(True)
                     self._emit("listening", on=True)
                     try:
-                        audio = self.recorder.record_hands_free()
+                        audio = self.recorder.record_hands_free(
+                            silence_s=self.cfg.wake_capture_silence,
+                            start_grace_s=self.cfg.wake_capture_grace,
+                            max_s=self.cfg.wake_capture_max,
+                            rms_gate=self.cfg.min_speech_rms,
+                        )
                     finally:
                         self._emit("listening", on=False)
                         self._mute_wake(False)

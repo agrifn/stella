@@ -35,6 +35,17 @@ class ClientConfig:
     # min_speech_rms; set it to 0 to disable the loudness gate entirely.
     min_speech_seconds: float = 0.3
     min_speech_rms: float = 0.003
+    # Hands-free (wake-word) capture endpointing: once speech is heard, stop after this
+    # much trailing silence; give up if no speech within the grace window; hard cap at
+    # max. Tighter silence = snappier voice commands (less dead air). The capture's
+    # speech-detect gate reuses min_speech_rms (one "what counts as speech" value).
+    wake_capture_silence: float = 0.45
+    wake_capture_grace: float = 2.5
+    wake_capture_max: float = 6.0
+    # STT confidence gates (faster-whisper): drop segments noisier / less confident
+    # than these so silence/noise never becomes a command.
+    stt_no_speech_prob: float = 0.6
+    stt_avg_logprob: float = -1.3
     execute_keys: bool = True        # actually press keys (False = dry-run / log only)
     hold_duration: float = 1.5       # seconds to hold a 'hold' key (e.g. self destruct)
     # CHAT mode: by default just type at the cursor and press Enter (the user
@@ -83,6 +94,11 @@ def load_client_config(settings_path: Path | None = None) -> ClientConfig:
         output_device=client.get("output_device", ClientConfig.output_device),
         min_speech_seconds=float(client.get("min_speech_seconds", ClientConfig.min_speech_seconds)),
         min_speech_rms=float(client.get("min_speech_rms", ClientConfig.min_speech_rms)),
+        wake_capture_silence=float(client.get("wake_capture_silence", ClientConfig.wake_capture_silence)),
+        wake_capture_grace=float(client.get("wake_capture_grace", ClientConfig.wake_capture_grace)),
+        wake_capture_max=float(client.get("wake_capture_max", ClientConfig.wake_capture_max)),
+        stt_no_speech_prob=float(client.get("stt_no_speech_prob", ClientConfig.stt_no_speech_prob)),
+        stt_avg_logprob=float(client.get("stt_avg_logprob", ClientConfig.stt_avg_logprob)),
         execute_keys=bool(client.get("execute_keys", ClientConfig.execute_keys)),
         hold_duration=float(client.get("hold_duration", ClientConfig.hold_duration)),
         chat_open_key=client.get("chat_open_key", ClientConfig.chat_open_key),

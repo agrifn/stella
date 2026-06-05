@@ -37,6 +37,7 @@ class Bridge(QObject):
     transcript = pyqtSignal(str)
     response = pyqtSignal(str, str)  # intent, text
     wake_state = pyqtSignal(bool)    # awake / asleep
+    warn = pyqtSignal(str)           # persistent warning line (e.g. not elevated)
 
     def on_event(self, name: str, data: dict):
         if name == "status":
@@ -61,6 +62,8 @@ class Bridge(QObject):
             self.status.emit(f"cancelled: {data.get('intent','')}")
         elif name == "executed":
             self.status.emit(f"executed: {data.get('keybind','')}")
+        elif name == "warn":
+            self.warn.emit(data.get("text", ""))
         elif name == "error":
             self.status.emit(data.get("text", "error"))
 
@@ -109,6 +112,7 @@ def main(argv=None):
     bridge.transcript.connect(overlay.set_transcript)
     bridge.response.connect(overlay.set_response)
     bridge.wake_state.connect(overlay.set_active)
+    bridge.warn.connect(overlay.set_warn)
 
     state = {"stop": False, "engine": None}
 

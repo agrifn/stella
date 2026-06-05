@@ -70,7 +70,12 @@ class Overlay(QWidget):
         self.response_label = QLabel("")
         self.response_label.setObjectName("response")
         self.response_label.setWordWrap(True)
-        for w in (self.status_label, self.transcript_label, self.response_label):
+        # Persistent warning line (e.g. "not elevated"); hidden unless set.
+        self.warn_label = QLabel("")
+        self.warn_label.setObjectName("warn")
+        self.warn_label.setWordWrap(True)
+        self.warn_label.setVisible(False)
+        for w in (self.status_label, self.transcript_label, self.response_label, self.warn_label):
             lay.addWidget(w)
 
         self.setStyleSheet("""
@@ -83,6 +88,7 @@ class Overlay(QWidget):
             #status { color: #7f8aa3; font-size: 11px; }
             #transcript { color: #e6ebf5; font-size: 13px; }
             #response { color: #9bd0ff; font-size: 13px; font-style: italic; }
+            #warn { color: #ff5d5d; font-size: 11px; font-weight: 700; }
         """)
         self._set_dot(False)
         self.set_mode("COMMAND")
@@ -123,6 +129,12 @@ class Overlay(QWidget):
 
     def set_status(self, text: str):
         self.status_label.setText(text)
+
+    def set_warn(self, text: str):
+        """Persistent warning line (red). Empty hides it."""
+        self.warn_label.setText(text)
+        self.warn_label.setVisible(bool(text))
+        self.position()
 
     def set_transcript(self, text: str):
         self.transcript_label.setText(f"“{text}”" if text else "")
