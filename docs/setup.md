@@ -1,35 +1,31 @@
 # Setup
 
 STELLA runs entirely on one Windows gaming PC: a native Windows client plus a Dockerized
-backend inside WSL2. (Earlier builds used a separate Proxmox/LXC server - that is no
-longer used; everything is in the Docker containers now.)
+backend inside WSL2. (Earlier builds used a separate Proxmox/LXC server and a local LLM -
+both are gone; everything is in one Docker container now, and intent is a local embedding
+classifier, not an LLM.)
 
 ## Prerequisites
 
-- Windows 11 with an NVIDIA GPU and a current driver.
+- Windows 11 with an NVIDIA GPU and a current driver (the GPU is for the client's Whisper
+  STT; the backend container is CPU-only).
 - **WSL2** with an Ubuntu distro, **systemd enabled** (`/etc/wsl.conf` -> `[boot]
   systemd=true`).
 - **Docker Engine + Docker Compose** inside the WSL2 distro (Docker Desktop also works).
-  Confirm GPU access:
-  ```bash
-  docker run --rm --gpus all ubuntu nvidia-smi
-  ```
-  If that fails, install the **nvidia-container-toolkit** in WSL2 and
-  `nvidia-ctk runtime configure --runtime=docker && systemctl restart docker`.
 - **Python 3.12** on Windows (for the client venv).
 
 ## Backend (Docker, in WSL2)
 
 From the repo:
 ```bash
-cp .env.example .env                 # default = local Ollama
+cp .env.example .env                 # optional; defaults work with no edits
 docker compose up -d --build
-docker compose exec ollama ollama pull llama3.2:3b
 ```
-This brings up two containers:
-- `stella-ollama` - the LLM on the GPU (`--gpus all`), internal only.
-- `stella-api` - FastAPI intent API + Piper TTS, published on `:8420`. On first run its
-  entrypoint downloads the default voice into a persistent `voices` volume.
+This brings up a single container:
+- `stella-api` - FastAPI intent classifier + Piper TTS, published on `:8420`. The build
+  bakes the embedding classifier model into the image; on first run the entrypoint
+  downloads the default Piper voice into a persistent `voices` volume. There is no LLM
+  and no model to pull.
 
 Check it:
 ```bash
@@ -37,15 +33,7 @@ curl http://localhost:8420/health
 curl -X POST http://localhost:8420/command -H "Content-Type: application/json" \
      -d '{"text":"turn on the lights","speak":false}'
 ```
-
-### Using an external LLM instead of local Ollama
-Edit `.env` and `docker compose up -d` again:
-```
-STELLA_LLM_PROVIDER=openai          # or: anthropic
-STELLA_LLM_MODEL=gpt-4o-mini
-STELLA_LLM_BASE_URL=https://api.openai.com/v1   # OpenRouter/Groq/LM Studio also work
-STELLA_LLM_API_KEY=sk-...
-```
+`/health` reports `provider: embedding` and the classifier model.
 
 ## Client (Windows)
 
@@ -68,20 +56,31 @@ Run it:
 ```bash
 docker compose ps
 docker compose logs -f stella-api
-docker compose restart stella-api          # after editing server code/config
-docker compose exec ollama ollama ps       # confirm the model is resident on GPU
+# After editing server code/config, a clean cycle is the most reliable:
+docker compose build stella-api && docker compose down && docker compose up -d
 ```
+
+## Voices
+
+The backend ships with the free `en_GB-jenny_dioco-medium` Piper voice. In the Command &
+Voice Manager you can:
+- **Add voice...** - download any of the ~100 free Piper voices by name
+  (browse: https://rhasspy.github.io/piper-samples/).
+- **Set / Test** - switch the active voice and preview it.
+- **Export... / Import...** - save a voice as a single `.zip` bundle to share with another
+  STELLA user, or install one shared with you. This is how you share a custom voice
+  without putting it in the repo.
 
 ## Security
 
-The API has no auth by default, which is fine for the intended single-PC loopback
-setup. Two things to know:
+The API has no auth by default, which is fine for the intended single-PC loopback setup.
+Two things to know:
 
 - **Port exposure.** `stella-api` publishes `:8420` and the container listens on
-  `0.0.0.0` (WSL2's NAT forward generally requires this so the Windows host can reach
-  it via `localhost`). On a shared or untrusted network, block inbound `8420` from
-  non-loopback addresses in the Windows firewall, or use WSL **mirrored** networking
-  so you can bind `127.0.0.1`.
+  `0.0.0.0` (WSL2's NAT forward generally requires this so the Windows host can reach it
+  via `localhost`). On a shared or untrusted network, block inbound `8420` from
+  non-loopback addresses in the Windows firewall, or use WSL **mirrored** networking so
+  you can bind `127.0.0.1`.
 - **Optional shared secret.** Set `STELLA_API_TOKEN` in `.env` (server) and the same
   value in the client (`client.api_token` in `config/settings.json`, or the
   `STELLA_API_TOKEN` env var). When set, every route except `/health` requires
@@ -91,10 +90,10 @@ setup. Two things to know:
 ## TTS engine
 
 Default is **piper** (self-contained in the image; the entrypoint downloads a voice).
-To use a host-side **Chatterbox** service (for a custom voice), set `STELLA_TTS_ENGINE=chatterbox`
-and `STELLA_CHATTERBOX_URL` in `.env`, and run that service yourself on the host.
-`GET /health` reports `tts_ready: false` if the selected engine cannot actually
-synthesize (e.g. chatterbox selected but not running).
+An optional host-side **Chatterbox** clone service lives under `voice/` and is off by
+default; point `STELLA_TTS_CHAT_ENGINE=chatterbox` (and `STELLA_CHATTERBOX_URL`) at it
+only if you run that service yourself. `GET /health` reports `tts_ready: false` if the
+selected engine cannot actually synthesize.
 
 ## Testing
 
@@ -103,8 +102,10 @@ Pure-logic unit tests (no CUDA / PyQt / pydirectinput needed) live in `tests/`:
 pip install -r requirements-dev.txt
 pytest
 ```
-They cover the confirmation gate, keybind parsing, knowledge routing, the macro
-parser, JSON extraction, and the command registry.
+They cover the confirmation gate, keybind parsing, the power slot-rule and its collision
+cases, n-best selection, multi-command splitting, mode-switch detection, voice-bundle
+export/import, the macro parser, and the command registry. Offline accuracy/eval scripts
+(needing the model) are under `tools/` (`classifier_eval`, `slot_eval`, `combined_eval`).
 
 ## Notes / gotchas
 
@@ -118,5 +119,6 @@ parser, JSON extraction, and the command registry.
 - **Whisper on Windows** needs the cuBLAS/cuDNN DLLs from the `nvidia-*-cu12` wheels on
   PATH; `client/cuda_paths.py` handles this. On an 8GB GPU drop `whisper_model` to
   `small`/`int8` in settings.
-- **num_ctx must be consistent** on every Ollama call or the model reloads (multi-second
-  stalls); the server pins it.
+- **Classifier thresholds** (`classifier.reject_threshold` / `clarify_threshold` in
+  settings) are the main accuracy lever: below reject = treated as chat; in the gray band
+  STELLA asks "Say again?". Tune them on your own transcribed commands.
