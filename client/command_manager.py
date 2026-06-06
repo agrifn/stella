@@ -15,10 +15,10 @@ from pathlib import Path
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
-    QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout,
-    QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit, QMainWindow,
-    QMessageBox, QPlainTextEdit, QPushButton, QTableWidget, QTableWidgetItem,
-    QVBoxLayout, QWidget,
+    QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog,
+    QFormLayout, QHBoxLayout, QHeaderView, QInputDialog, QLabel, QLineEdit,
+    QMainWindow, QMessageBox, QPlainTextEdit, QPushButton, QTableWidget,
+    QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from .audio_player import AudioPlayer
@@ -359,8 +359,14 @@ class MainWindow(QMainWindow):
         self.b_test.clicked.connect(self.test_voice)
         self.b_add = QPushButton("Add voice...")
         self.b_add.clicked.connect(self.add_voice)
+        self.b_export = QPushButton("Export...")
+        self.b_export.setToolTip("Save the selected voice as a shareable .zip bundle")
+        self.b_export.clicked.connect(self.export_voice)
+        self.b_import = QPushButton("Import...")
+        self.b_import.setToolTip("Install a voice .zip bundle shared by another user")
+        self.b_import.clicked.connect(self.import_voice)
         voice.addWidget(self.voice_combo, 1)
-        for b in (self.b_set, self.b_test, self.b_add):
+        for b in (self.b_set, self.b_test, self.b_add, self.b_export, self.b_import):
             voice.addWidget(b)
         root.addLayout(voice)
         # The voice catalog is Piper-only; _apply_engine() greys it out + explains
@@ -425,6 +431,36 @@ class MainWindow(QMainWindow):
         except Exception as e:  # noqa: BLE001
             QMessageBox.critical(self, "Add voice failed", str(e))
 
+    def export_voice(self):
+        """Save the selected voice as a .zip bundle to share with another user."""
+        name = self.voice_combo.currentText()
+        if not name:
+            return
+        dest, _ = QFileDialog.getSaveFileName(
+            self, "Export voice bundle", f"{name}-stella-voice.zip", "Voice bundle (*.zip)")
+        if not dest:
+            return
+        try:
+            self.api.export_voice(name, dest)
+            self.statusBar().showMessage(f"exported {name} -> {dest}")
+        except Exception as e:  # noqa: BLE001
+            QMessageBox.critical(self, "Export voice failed", str(e))
+
+    def import_voice(self):
+        """Install a voice .zip bundle that another user exported and shared."""
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Import voice bundle", "", "Voice bundle (*.zip)")
+        if not path:
+            return
+        self.statusBar().showMessage("importing voice ...")
+        QApplication.processEvents()
+        try:
+            res = self.api.import_voice(path)
+            self.reload_voices()
+            self.statusBar().showMessage(f"imported voice (active: {res.get('active', '?')})")
+        except Exception as e:  # noqa: BLE001
+            QMessageBox.critical(self, "Import voice failed", str(e))
+
     # -- launch the overlay -----------------------------------------------
     def open_settings(self):
         dlg = SettingsDialog(self, CONFIG_DIR / "settings.json")
@@ -468,12 +504,17 @@ class MainWindow(QMainWindow):
 
     def _apply_engine(self, engine: str):
         """The voice catalog is for the built-in Piper engine only. When a different
-        engine (e.g. chatterbox) is active, grey the catalog out and explain why."""
-        is_piper = engine == "piper"
-        for w in (self.voice_combo, self.b_set, self.b_test, self.b_add):
+        engine (e.g. chatterbox) is active, grey the catalog out and explain why.
+        NOTE /health reports a summary like 'ack=piper,chat=piper', so test for piper
+        being present rather than an exact match."""
+        is_piper = "piper" in (engine or "")
+        for w in (self.voice_combo, self.b_set, self.b_test, self.b_add,
+                  self.b_export, self.b_import):
             w.setEnabled(is_piper)
         if is_piper:
-            self.voice_note.setText("Piper voice catalog (the built-in TTS engine).")
+            self.voice_note.setText(
+                "Piper voice catalog. Export a voice to share it as a .zip; Import "
+                "installs one shared with you.")
         else:
             self.voice_note.setText(
                 f"TTS engine is '{engine}'. This Piper voice list is inactive; the "

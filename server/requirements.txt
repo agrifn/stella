@@ -2,5 +2,6 @@ fastapi>=0.115
 uvicorn[standard]>=0.30
 httpx>=0.27
 pydantic>=2.7
+python-multipart>=0.0.9   # multipart uploads for /voices/import (voice sharing)
 model2vec>=0.3   # static-embedding intent classifier (potion-32M), CPU/numpy-only; replaces the LLM
 piper-tts==1.4.2   # piper1-gpl: same TTS engine the voice was trained/exported with

@@ -53,6 +53,25 @@ class CommandsAPI:
             raise RuntimeError(self._detail(r))
         return r.json()
 
+    def export_voice(self, name: str, dest_zip: str) -> None:
+        """Download a voice as a shareable .zip bundle, saved to dest_zip."""
+        r = self._s.get(f"{self._url}/voices/{name}/bundle", timeout=180)
+        if r.status_code >= 400:
+            raise RuntimeError(self._detail(r))
+        with open(dest_zip, "wb") as f:
+            f.write(r.content)
+
+    def import_voice(self, zip_path: str, make_active: bool = False) -> dict:
+        """Install a voice from a .zip bundle exported by another STELLA user."""
+        from pathlib import Path
+        with open(zip_path, "rb") as fz:
+            files = {"bundle": (Path(zip_path).name, fz, "application/zip")}
+            data = {"make_active": "true" if make_active else "false"}
+            r = self._s.post(f"{self._url}/voices/import", files=files, data=data, timeout=180)
+        if r.status_code >= 400:
+            raise RuntimeError(self._detail(r))
+        return r.json()
+
     def test_phrase(self, text: str) -> dict:
         """Send a phrase through /command (no TTS) to see how it classifies."""
         r = self._s.post(f"{self._url}/command", json={"text": text, "speak": False},

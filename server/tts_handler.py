@@ -26,6 +26,7 @@ import os
 import re
 import shlex
 import wave
+import zipfile
 from collections import OrderedDict
 from pathlib import Path
 from typing import Optional
@@ -194,6 +195,65 @@ class TTSHandler:
         for suffix, t in tmp.items():
             t.replace(self._dir / f"{voice}.onnx{suffix}")
         log.info("downloaded voice %s", voice)
+
+    # -- share: export / import a voice bundle ---------------------------
+    def export_bundle(self, name: str) -> bytes:
+        """Zip a voice (<name>.onnx + <name>.onnx.json) into a single shareable
+        bundle. The user hands this file to a friend, who imports it. Keeps custom
+        voices OUT of the repo/distribution - they travel as user files, not code."""
+        _validate_voice_name(name)
+        onnx = self._dir / f"{name}.onnx"
+        cfg = self._dir / f"{name}.onnx.json"
+        if not onnx.exists():
+            raise FileNotFoundError(f"voice not installed: {name}")
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+            z.write(onnx, f"{name}.onnx")
+            if cfg.exists():
+                z.write(cfg, f"{name}.onnx.json")
+        return buf.getvalue()
+
+    def import_bundle(self, data: bytes, make_active: bool = False) -> str:
+        """Install a voice from a .zip bundle (one .onnx plus its .onnx.json) and
+        return the installed name. Only the member BASENAMES are used and the install
+        name is validated, so a crafted zip cannot write outside the voices dir. Written
+        atomically (both files or neither)."""
+        onnx_bytes = json_bytes = None
+        name = None
+        try:
+            with zipfile.ZipFile(io.BytesIO(data)) as z:
+                for info in z.infolist():
+                    if info.is_dir():
+                        continue
+                    base = Path(info.filename).name
+                    if base.endswith(".onnx.json"):
+                        json_bytes = z.read(info)
+                    elif base.endswith(".onnx"):
+                        onnx_bytes = z.read(info)
+                        name = base[: -len(".onnx")]
+        except zipfile.BadZipFile as e:
+            raise ValueError("not a valid voice bundle (.zip)") from e
+        if not onnx_bytes or not name:
+            raise ValueError("bundle has no .onnx voice file")
+        if not json_bytes:
+            raise ValueError("bundle is missing the .onnx.json config")
+        _validate_voice_name(name)
+        self._dir.mkdir(parents=True, exist_ok=True)
+        tmp_o = self._dir / f"{name}.onnx.part"
+        tmp_j = self._dir / f"{name}.onnx.json.part"
+        try:
+            tmp_o.write_bytes(onnx_bytes)
+            tmp_j.write_bytes(json_bytes)
+        except Exception:
+            tmp_o.unlink(missing_ok=True)
+            tmp_j.unlink(missing_ok=True)
+            raise
+        tmp_o.replace(self._dir / f"{name}.onnx")
+        tmp_j.replace(self._dir / f"{name}.onnx.json")
+        if make_active:
+            self.set_voice(name)
+        log.info("imported voice bundle %s (active=%s)", name, make_active)
+        return name
 
     # -- synthesis --------------------------------------------------------
     def _voice_rate(self) -> int:

@@ -16,8 +16,9 @@ import base64
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import Response
 
 from .command_registry import Command, CommandError, CommandRegistry
 from .config import load_config
@@ -173,6 +174,32 @@ async def download_voice(req: VoiceRequest) -> VoicesResponse:
         await tts.download_voice(req.voice)
     except Exception as e:  # noqa: BLE001 - bad name / network / 404
         raise HTTPException(status_code=400, detail=f"download failed: {e}") from e
+    return VoicesResponse(active=tts.voice, available=tts.available_voices())
+
+
+@app.get("/voices/{name}/bundle")
+async def export_voice(name: str) -> Response:
+    """Download a voice as a single shareable .zip (the .onnx + .onnx.json)."""
+    tts = app.state.tts
+    try:
+        data = await run_in_threadpool(tts.export_bundle, name)
+    except (ValueError, FileNotFoundError) as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    return Response(
+        content=data, media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{name}-stella-voice.zip"'})
+
+
+@app.post("/voices/import", response_model=VoicesResponse)
+async def import_voice(bundle: UploadFile = File(...),
+                       make_active: bool = Form(False)) -> VoicesResponse:
+    """Install a voice from a .zip bundle exported by another STELLA user."""
+    tts = app.state.tts
+    try:
+        data = await bundle.read()
+        await run_in_threadpool(tts.import_bundle, data, make_active)
+    except (ValueError, FileNotFoundError) as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     return VoicesResponse(active=tts.voice, available=tts.available_voices())
 
 
