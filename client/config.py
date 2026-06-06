@@ -56,7 +56,7 @@ class ClientConfig:
     # PTT press / wake word. Lets you chain commands. The window is how long you have
     # to START speaking; it re-arms after each command and closes on silence.
     follow_up_enabled: bool = True
-    follow_up_window: float = 2.5
+    follow_up_window: float = 1.5      # seconds to wait for a follow-up command before the window closes
     execute_keys: bool = True        # actually press keys (False = dry-run / log only)
     hold_duration: float = 1.5       # seconds to hold a 'hold' key (e.g. self destruct)
     # CHAT mode: by default just type at the cursor and press Enter (the user
