@@ -25,7 +25,17 @@ from .config import load_client_config
 from .engine import StellaEngine
 from .overlay import Overlay
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+from pathlib import Path
+
+# Log to console AND to stella.log next to the launchers, so problems can be
+# diagnosed after the fact (the overlay window has no scrollback).
+_LOG_FILE = Path(__file__).resolve().parent.parent / "stella.log"
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    handlers=[logging.StreamHandler(),
+              logging.FileHandler(_LOG_FILE, mode="w", encoding="utf-8")],
+)
 log = logging.getLogger("stella.app")
 
 
