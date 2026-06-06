@@ -34,7 +34,7 @@ class ClientConfig:
     # and silence) before Whisper. If a quiet mic is being gated out, lower
     # min_speech_rms; set it to 0 to disable the loudness gate entirely.
     min_speech_seconds: float = 0.3
-    min_speech_rms: float = 0.003
+    min_speech_rms: float = 0.0012
     # Hands-free (wake-word) capture endpointing: once speech is heard, stop after this
     # much trailing silence; give up if no speech within the grace window; hard cap at
     # max. Tighter silence = snappier voice commands (less dead air). The capture's
@@ -56,7 +56,7 @@ class ClientConfig:
     # PTT press / wake word. Lets you chain commands. The window is how long you have
     # to START speaking; it re-arms after each command and closes on silence.
     follow_up_enabled: bool = True
-    follow_up_window: float = 1.5      # seconds to wait for a follow-up command before the window closes
+    follow_up_window: float = 1.2      # seconds to wait for a follow-up command before the window closes
     execute_keys: bool = True        # actually press keys (False = dry-run / log only)
     hold_duration: float = 1.5       # seconds to hold a 'hold' key (e.g. self destruct)
     # CHAT mode: by default just type at the cursor and press Enter (the user
