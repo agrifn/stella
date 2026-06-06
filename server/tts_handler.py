@@ -1,12 +1,13 @@
-"""Hybrid TTS: route each utterance to the right engine.
+"""TTS handler. PIPER-ONLY by default; Chatterbox is an optional legacy engine.
 
-  - "ack"  route -> Piper (fast, local, prewarmed): short deterministic command acks
-                    on the latency-critical path ("Boosting.", "Full stop.").
-  - "chat" route -> Chatterbox host service (higher quality): longer chat / knowledge
-                    replies where latency is forgivable.
+STELLA ships Piper-only (the custom Cortana voice). Both routes default to Piper:
+  - "ack"  route -> command acks on the latency-critical path ("Boosting.").
+  - "chat" route -> the rare chat reply (now only over-split parts / rejects, since
+                    the classifier replaced the LLM/knowledge replies).
 
-Both engines live behind this one handler so the cache, readiness, and Piper voice
-management stay in one place. Engines are chosen by env:
+The two-route split is kept (it is free) so an ack vs chat engine COULD differ, but
+both default to Piper. Chatterbox remains reachable only if you explicitly point a
+route at it and run the host-side service. Engines are chosen by env:
   STELLA_TTS_ACK_ENGINE  (default "piper")
   STELLA_TTS_CHAT_ENGINE (default: STELLA_TTS_ENGINE, else "piper")
   STELLA_TTS_ENGINE      (legacy single-engine fallback for the chat route)
@@ -214,9 +215,9 @@ class TTSHandler:
         return buf.getvalue()
 
     async def synthesize(self, text: str, route: str = "ack") -> Optional[bytes]:
-        """Synthesize text. route='ack' -> Piper (fast, command acks); route='chat'
-        -> Chatterbox (quality, chat/knowledge). Fails SOFT (returns None) so a downed
-        chat engine never breaks the ack/command path."""
+        """Synthesize text via the engine configured for the route (both default to
+        Piper). Fails SOFT (returns None) so a downed chat engine never breaks the
+        ack/command path."""
         if not self._cfg.enabled or not text.strip():
             return None
         engine = self._engine_for(route)

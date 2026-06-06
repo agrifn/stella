@@ -269,12 +269,14 @@ class StellaEngine:
                  t_srv, res.intent, res.confidence, res.keybind, res.clarify, count)
 
         # n-best rescoring: only on the uncertain path (top transcript was chat or a
-        # borderline command), and only when we kept the audio.
+        # borderline command), and only when we kept the audio. NOTE this re-runs STT
+        # (sampled decodes) plus a second server call, so it adds latency exactly on the
+        # uncertain utterances - timed and logged so that cost stays visible.
         if audio is not None and self._nbest and (not self._is_command(res) or res.clarify):
+            t_nb = time.time()
             alts = [c for c in self.stt.transcribe_nbest(audio, self._nbest_n)
                     if c and c.lower() != text.lower()]
             if alts:
-                log.info("n-best alternates: %r", alts)
                 try:
                     res2 = self.sender.send(text, speak=False, candidates=alts)
                 except Exception as e:  # noqa: BLE001
@@ -282,10 +284,16 @@ class StellaEngine:
                     log.warning("n-best rescoring failed: %s", e)
                 # Adopt the rescored result if it is a command and an improvement
                 # (the first pass was not a command, or the new one is confident).
-                if self._is_command(res2) and (not self._is_command(res) or not res2.clarify):
+                adopted = self._is_command(res2) and (not self._is_command(res) or not res2.clarify)
+                log.info("n-best %.2fs: alternates=%r adopted=%s%s", time.time() - t_nb,
+                         alts, adopted,
+                         f" -> {res2.intent}({res2.confidence:.2f})" if adopted else "")
+                if adopted:
                     res = res2
                     if res.chosen_text and res.chosen_text.lower() != text.lower():
                         self._emit("transcript", text=res.chosen_text)
+            else:
+                log.info("n-best %.2fs: no distinct alternates", time.time() - t_nb)
 
         # Still a borderline command: ask once instead of guessing.
         if audio is not None and self._is_command(res) and res.clarify:
@@ -353,10 +361,11 @@ class StellaEngine:
         if not text:
             self._speak_async("Didn't catch that.", route="ack")
             return None
-        alts = ([c for c in self.stt.transcribe_nbest(audio, self._nbest_n)
-                 if c and c.lower() != text.lower()] if self._nbest else [])
+        # The retry is already a fresh, deliberate utterance, so do NOT run n-best
+        # again here - that bounds one stubborn command to a single recovery round
+        # (n-best -> say-again -> single re-classify) instead of stacking STT passes.
         try:
-            res = self.sender.send(text, speak=False, candidates=alts)
+            res = self.sender.send(text, speak=False)
         except Exception as e:  # noqa: BLE001
             self._emit("error", text=f"server error: {e}")
             return None
@@ -391,7 +400,7 @@ class StellaEngine:
 
     def _speak_async(self, text: str, route: str = "chat"):
         """Fetch TTS and play it without blocking the loop (voice trails the action).
-        route='ack' -> fast Piper (command feedback); 'chat' -> Chatterbox."""
+        route selects the server's TTS engine for acks vs chat (both default to Piper)."""
         if not text:
             return
         self._set_playing(1)  # mark BEFORE the thread starts (avoid follow-up race)

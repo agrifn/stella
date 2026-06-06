@@ -36,12 +36,19 @@ _POWER_MAP = {
 _POOL = [(re.compile(r"\b(weapon|weapons|gun|guns)\b"), "weapons"),
          (re.compile(r"\b(engine|engines|thruster|thrusters)\b"), "engines"),
          (re.compile(r"\b(shield|shields)\b"), "shields")]
+# Order matters: hard-stop words (max/min) are checked before the gradual ones
+# (inc/dec), and toggle last. Word choice encodes magnitude on purpose:
+#   - "drop/cut/kill/zero" = slam to MIN; "lower/down" = ease one pip = DEC. An
+#     ambiguous reduce-word resolves to the smaller, reversible action (a wrong rule
+#     hit has no recovery layer behind it - score is 1.0 and never rescored).
+#   - "power" is a NOUN here ("more power to shields", "weapons power"), never a
+#     direction, so it is NOT a toggle trigger; toggle needs an explicit token.
 _DIR = [
     (re.compile(r"\b(max|maximum|full|hot|to max|all power)\b"), "max"),
     (re.compile(r"\b(min|minimum|cut|kill|zero|cold|drop|to zero|take everything)\b"), "min"),
     (re.compile(r"\b(more|raise|add|increase|boost)\b"), "inc"),
-    (re.compile(r"\b(less|fewer|reduce|ease off|back off|decrease)\b"), "dec"),
-    (re.compile(r"\b(on|off|toggle|arm|power)\b"), "toggle"),
+    (re.compile(r"\b(less|fewer|reduce|ease off|back off|decrease|lower|down)\b"), "dec"),
+    (re.compile(r"\b(toggle|arm|on|off)\b"), "toggle"),
 ]
 # Pool-less power phrasings.
 _POWER_ALIAS = {"brace": ("shields", "max"), "punch it": ("engines", "max")}

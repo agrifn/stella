@@ -64,8 +64,8 @@ class CommandSender:
         )
 
     def speak(self, text: str, route: str = "chat") -> Optional[str]:
-        """Get TTS audio (base64 WAV) for text. route='ack' -> fast Piper (command
-        feedback), route='chat' -> Chatterbox (chat/knowledge replies)."""
+        """Get TTS audio (base64 WAV) for text. route ('ack' for command feedback,
+        'chat' for replies) selects the server's configured engine (both Piper)."""
         try:
             r = self._session.post(f"{self._url}/speak", json={"text": text, "route": route},
                                    timeout=self._timeout)

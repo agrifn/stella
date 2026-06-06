@@ -1,68 +1,69 @@
-"""Validate the proposed design: power commands handled by a deterministic slot rule,
-everything else by the potion-32M embedding classifier. Run from repo root."""
+"""Validate the design: power commands handled by a deterministic slot rule,
+everything else by the potion-32M embedding classifier. Run from repo root.
+
+This imports the PRODUCTION rule (server.intent_classifier._power_rule) so the eval
+can never drift from what actually runs. It also checks a set of collision cases
+(phrasings that previously mis-resolved) so a regression shows up here."""
 from __future__ import annotations
 
 import json
-import re
 from pathlib import Path
 
 import numpy as np
 from model2vec import StaticModel
 
+from server.intent_classifier import _power_rule
+
 KB = json.loads(Path("config/keybinds.json").read_text(encoding="utf-8"))["keybinds"]
 
-# Map the 12 power intents to (pool, direction) so we can score the rule.
 POWER_INTENTS = {
-    "weapons_power_max": ("weapons", "max"), "weapons_power_inc": ("weapons", "inc"),
-    "weapons_power_dec": ("weapons", "dec"), "lower_weapons_min": ("weapons", "min"),
-    "weapons_power_toggle": ("weapons", "toggle"),
-    "engines_power_max": ("engines", "max"), "engines_power_inc": ("engines", "inc"),
-    "engines_power_dec": ("engines", "dec"), "lower_engine_min": ("engines", "min"),
-    "thrusters_power_toggle": ("engines", "toggle"),
-    "shields_power_max": ("shields", "max"), "shields_power_inc": ("shields", "inc"),
-    "shields_power_dec": ("shields", "dec"), "lower_shields_min": ("shields", "min"),
-    "shields_power_toggle": ("shields", "toggle"),
+    "weapons_power_max", "weapons_power_inc", "weapons_power_dec", "lower_weapons_min",
+    "weapons_power_toggle", "engines_power_max", "engines_power_inc", "engines_power_dec",
+    "lower_engine_min", "thrusters_power_toggle", "shields_power_max", "shields_power_inc",
+    "shields_power_dec", "lower_shields_min", "shields_power_toggle",
 }
 
-_POOL = [(r"\b(weapon|weapons|gun|guns)\b", "weapons"),
-         (r"\b(engine|engines|thruster|thrusters)\b", "engines"),
-         (r"\b(shield|shields)\b", "shields")]
-# order matters: check min/max before inc/dec, toggle last
-_DIR = [
-    (r"\b(max|maximum|full|hot|brace|punch it|all power|to max)\b", "max"),
-    (r"\b(min|minimum|cut|kill|zero|cold|drop|take everything|to zero)\b", "min"),
-    (r"\b(more|raise|add|increase|boost|up)\b", "inc"),
-    (r"\b(less|fewer|reduce|ease off|back off|decrease|lower)\b", "dec"),
-    (r"\b(on|off|toggle|power)\b", "toggle"),
-]
-
-
-def power_slot(text: str):
-    t = text.lower()
-    pool = next((v for rx, v in _POOL if re.search(rx, t)), None)
-    if not pool:
-        return None
-    direction = next((v for rx, v in _DIR if re.search(rx, t)), None)
-    if not direction:
-        return None
-    return (pool, direction)
+# Phrasings that previously mis-resolved (greedy toggle, missing lower/down). Each
+# maps to the intent the production rule MUST return now. None = must fall through to
+# the embedder (no deterministic hit).
+COLLISIONS = {
+    "lower shields": "shields_power_dec",
+    "shields down": "shields_power_dec",
+    "power down weapons": "weapons_power_dec",
+    "turn off shields": "shields_power_toggle",
+    "more power to shields": "shields_power_inc",
+    "all power to shields": "shields_power_max",
+    "weapons power": None,         # bare noun, no direction -> embedder
+    "eject": None,                 # dangerous: never a power-rule hit
+    "self destruct": None,
+}
 
 
 def main() -> int:
     # 1) power slot-rule coverage on the real power example phrases
     pc = pw = 0
     pmiss = []
-    for intent, want in POWER_INTENTS.items():
+    for intent in POWER_INTENTS:
         for ph in (KB.get(intent, {}).get("examples") or []):
             pw += 1
-            got = power_slot(ph)
-            if got == want:
+            got = _power_rule(ph.lower())
+            if got == intent:
                 pc += 1
             else:
-                pmiss.append((ph, want, got))
+                pmiss.append((ph, intent, got))
     print(f"POWER SLOT-RULE: {pc}/{pw} = {pc/pw:.1%} on power example phrases")
     for m in pmiss:
         print(f"   miss {m[0]!r:34s} want={m[1]} got={m[2]}")
+
+    # 1b) collision cases (regressions the review found)
+    cc = cw = 0
+    for phrase, want in COLLISIONS.items():
+        cw += 1
+        got = _power_rule(phrase.lower())
+        ok = got == want
+        cc += ok
+        print(f"   {'ok  ' if ok else 'FAIL'} {phrase!r:24s} want={want} got={got}")
+    print(f"COLLISION CASES: {cc}/{cw}")
 
     # 2) embedding classifier leave-one-out on NON-power intents only
     phrases, labels = [], []

@@ -11,7 +11,8 @@ problems. No secrets are included.
 STELLA is a private, locally-hosted AI voice assistant that lets a player control
 Star Citizen (a flight/space sim with a very large keybind set) by talking. The pilot
 speaks a phrase ("raise shields", "max engines", "fire three flares"); STELLA
-transcribes it, classifies the intent with a local LLM, and sends the corresponding
+transcribes it, classifies the intent with a local static-embedding classifier
+(the LLM was removed - see section 9), and sends the corresponding
 keystroke(s) into the game. It also speaks short acknowledgements back in a custom
 voice. It is single-user, runs entirely on the player's own hardware, and uses no
 cloud services for the core loop.
@@ -229,9 +230,15 @@ Open questions for research:
 
 ## 9. Current state (what is live)
 
+- Intent engine: the LLM/Ollama was REMOVED and replaced by a local static-embedding
+  classifier (model2vec potion-32M, CPU/numpy, sub-ms): a deterministic power slot-rule,
+  a few disambiguation rules, then nearest-example cosine with a reject-to-chat
+  threshold. Single container now (no stella-ollama, ~2.5 GB VRAM freed). Sections 1-7
+  above describe the earlier LLM design and are kept as history. Reliability layers
+  added on top: ASR n-best rescoring + a "say again?" gray-zone recovery (both on the
+  uncertain path only) and a follow-up listen window for hands-free chaining.
 - Backend: Piper-only TTS, voice `cortana_v3` tuned (noise 0.55 / noise_w 0.60 /
-  length 1.35), Chatterbox dropped and its VRAM freed. LLM llama3.2:3b at num_ctx 4096.
-  40 commands. Healthy.
+  length 1.35), Chatterbox dropped and its VRAM freed. 40 commands. Healthy.
 - Client: PTT working; wake word "Stella" working as a hands-free PTT trigger
   (always-on). Multi-command and repeat working. GUI with full settings.
 - Voice quality: accepted by the user (clear enough, energetic, reverb kept).

@@ -19,7 +19,8 @@ class CommandRequest(BaseModel):
 class SpeakRequest(BaseModel):
     """Ask the server to synthesize arbitrary text (no intent parsing)."""
     text: str = Field(..., min_length=1)
-    route: str = Field("chat", description="'ack' -> fast Piper, 'chat' -> Chatterbox")
+    route: str = Field("chat", description="ack/chat route to the configured TTS engine "
+                                           "(both default to Piper)")
 
 
 class SpeakResponse(BaseModel):

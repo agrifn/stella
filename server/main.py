@@ -142,8 +142,8 @@ async def command(req: CommandRequest) -> CommandResponse:
 # --- Speak arbitrary text (TTS only, no intent parsing) --------------------
 @app.post("/speak", response_model=SpeakResponse)
 async def speak(req: SpeakRequest) -> SpeakResponse:
-    # route defaults to "chat" (Chatterbox); the client sends "ack" for command
-    # feedback like "Confirmed."/"Cancelled." so those bark via fast Piper.
+    # route just selects the configured engine (both default to Piper); the client
+    # sends "ack" for command feedback like "Confirmed."/"Cancelled.".
     wav = await app.state.tts.synthesize(req.text, route=req.route)
     audio_b64 = base64.b64encode(wav).decode("ascii") if wav else None
     return SpeakResponse(text=req.text, audio=audio_b64)
