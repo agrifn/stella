@@ -18,11 +18,17 @@ _MODE_COLORS = {"COMMAND": "#39d98a", "CHAT": "#f7b955"}
 
 
 class Overlay(QWidget):
-    def __init__(self, corner: str = "top-left", opacity: float = 0.85, margin: int = 24):
+    def __init__(self, corner: str = "top-left", opacity: float = 0.85, margin: int = 24,
+                 scale: float = 1.0):
         super().__init__()
         self._corner = corner
         self._margin = margin
         self._opacity = opacity
+        self._scale = max(0.5, min(2.0, scale))  # clamp to a sane range
+
+        def px(v: float) -> int:  # scale a base pixel value
+            return max(1, round(v * self._scale))
+        self._px = px
 
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
@@ -33,7 +39,7 @@ class Overlay(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self.setWindowOpacity(opacity)
-        self.setFixedWidth(380)
+        self.setFixedWidth(px(380))
 
         panel = QFrame(self)
         panel.setObjectName("panel")
@@ -42,8 +48,8 @@ class Overlay(QWidget):
         outer.addWidget(panel)
 
         lay = QVBoxLayout(panel)
-        lay.setContentsMargins(16, 12, 16, 12)
-        lay.setSpacing(6)
+        lay.setContentsMargins(px(16), px(12), px(16), px(12))
+        lay.setSpacing(px(6))
 
         # header: title + mode badge + listening dot
         header = QHBoxLayout()
@@ -78,17 +84,18 @@ class Overlay(QWidget):
         for w in (self.status_label, self.transcript_label, self.response_label, self.warn_label):
             lay.addWidget(w)
 
-        self.setStyleSheet("""
-            #panel { background: rgba(12,16,24,235); border: 1px solid rgba(120,150,200,90);
-                     border-radius: 12px; }
-            #title { color: #cfe3ff; font-size: 16px; font-weight: 700; letter-spacing: 2px; }
-            #state { color: #6b7689; font-size: 11px; font-weight: 700; letter-spacing: 1px; }
-            #mode  { color: #39d98a; font-size: 12px; font-weight: 700; }
-            #dot   { color: #444b5a; font-size: 12px; }
-            #status { color: #7f8aa3; font-size: 11px; }
-            #transcript { color: #e6ebf5; font-size: 13px; }
-            #response { color: #9bd0ff; font-size: 13px; font-style: italic; }
-            #warn { color: #ff5d5d; font-size: 11px; font-weight: 700; }
+        px = self._px
+        self.setStyleSheet(f"""
+            #panel {{ background: rgba(12,16,24,235); border: 1px solid rgba(120,150,200,90);
+                     border-radius: {px(12)}px; }}
+            #title {{ color: #cfe3ff; font-size: {px(16)}px; font-weight: 700; letter-spacing: 2px; }}
+            #state {{ color: #6b7689; font-size: {px(11)}px; font-weight: 700; letter-spacing: 1px; }}
+            #mode  {{ color: #39d98a; font-size: {px(12)}px; font-weight: 700; }}
+            #dot   {{ color: #444b5a; font-size: {px(12)}px; }}
+            #status {{ color: #7f8aa3; font-size: {px(11)}px; }}
+            #transcript {{ color: #e6ebf5; font-size: {px(13)}px; }}
+            #response {{ color: #9bd0ff; font-size: {px(13)}px; font-style: italic; }}
+            #warn {{ color: #ff5d5d; font-size: {px(11)}px; font-weight: 700; }}
         """)
         self._set_dot(False)
         self.set_mode("COMMAND")

@@ -80,9 +80,10 @@ class ClientConfig:
     # match the server's STELLA_API_TOKEN. Empty = no auth header (the default).
     api_token: str = ""
     # Overlay HUD
-    overlay_corner: str = "top-left"  # top-left | top-right | bottom-left | bottom-right
+    overlay_corner: str = "bottom-right"  # top-left | top-right | bottom-left | bottom-right
     overlay_opacity: float = 0.85
     overlay_margin: int = 24
+    overlay_scale: float = 0.8         # HUD size multiplier (smaller < 1.0 < larger)
 
 
 def load_client_config(settings_path: Path | None = None) -> ClientConfig:
@@ -130,4 +131,5 @@ def load_client_config(settings_path: Path | None = None) -> ClientConfig:
         overlay_corner=client.get("overlay_corner", ClientConfig.overlay_corner),
         overlay_opacity=float(client.get("overlay_opacity", ClientConfig.overlay_opacity)),
         overlay_margin=int(client.get("overlay_margin", ClientConfig.overlay_margin)),
+        overlay_scale=float(client.get("overlay_scale", ClientConfig.overlay_scale)),
     )

@@ -114,7 +114,8 @@ def main(argv=None):
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
 
-    overlay = Overlay(cfg.overlay_corner, cfg.overlay_opacity, cfg.overlay_margin)
+    overlay = Overlay(cfg.overlay_corner, cfg.overlay_opacity, cfg.overlay_margin,
+                      cfg.overlay_scale)
     bridge = Bridge()
     bridge.status.connect(overlay.set_status)
     bridge.mode.connect(overlay.set_mode)

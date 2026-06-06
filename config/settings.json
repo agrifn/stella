@@ -40,8 +40,9 @@
     "wake_word_enabled": false,
     "wake_word_model": "",
     "wake_word_threshold": 0.5,
-    "overlay_corner": "top-left",
+    "overlay_corner": "bottom-right",
     "overlay_opacity": 0.85,
-    "overlay_margin": 24
+    "overlay_margin": 24,
+    "overlay_scale": 0.8
   }
 }
