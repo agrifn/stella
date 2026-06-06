@@ -3,11 +3,11 @@
 # start the API. Added/downloaded voices live in the same volume and persist.
 set -e
 VOICE_DIR="${STELLA_VOICES_DIR:-/opt/voices}"
-DEFAULT=en_US-lessac-medium
+DEFAULT=en_GB-jenny_dioco-medium
 mkdir -p "$VOICE_DIR"
 if [ ! -f "$VOICE_DIR/$DEFAULT.onnx" ]; then
   echo "Downloading default voice $DEFAULT ..."
-  base="https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium"
+  base="https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_GB/jenny_dioco/medium"
   curl -fsSL -o "$VOICE_DIR/$DEFAULT.onnx" "$base/$DEFAULT.onnx"
   curl -fsSL -o "$VOICE_DIR/$DEFAULT.onnx.json" "$base/$DEFAULT.onnx.json"
 fi

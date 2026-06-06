@@ -7,7 +7,7 @@
   "server_url": "http://127.0.0.1:8420",
   "tts": {
     "enabled": true,
-    "voice": "en_US-lessac-medium",
+    "voice": "en_GB-jenny_dioco-medium",
     "sample_rate": 22050
   },
   "classifier": {

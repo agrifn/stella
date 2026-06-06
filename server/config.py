@@ -20,7 +20,7 @@ CONFIG_DIR = REPO_ROOT / "config"
 @dataclass(frozen=True)
 class TTSConfig:
     enabled: bool = True
-    voice: str = "en_US-lessac-medium"
+    voice: str = "en_GB-jenny_dioco-medium"  # shipped default (free voice; a custom/Cortana voice is set per-user)
     sample_rate: int = 22050
     # Directory holding <voice>.onnx and <voice>.onnx.json
     voices_dir: Path = field(default_factory=lambda: SERVER_DIR / "voices")
