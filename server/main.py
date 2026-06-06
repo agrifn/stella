@@ -95,10 +95,16 @@ def _to_model(cmd: Command) -> CommandModel:
 async def command(req: CommandRequest) -> CommandResponse:
     registry: CommandRegistry = app.state.registry
     tts: TTSHandler = app.state.tts
+    cfg = app.state.cfg
 
     # Local embedding classifier: text -> intent (microseconds, CPU). Below the reject
-    # threshold it returns 'chat' (not a command).
-    intent, conf = app.state.classifier.classify(req.text)
+    # threshold it returns 'chat' (not a command). When the client supplies ASR n-best
+    # alternates, classify all of them and keep the most confident command.
+    texts = [req.text, *req.candidates]
+    intent, conf, chosen = app.state.classifier.classify_best(texts)
+    # Borderline command (score in the gray zone): tell the client to ask "Say again?"
+    # rather than firing a guess. Deterministic rule hits score 1.0 and never clarify.
+    clarify = intent != "chat" and conf < cfg.classifier_clarify
 
     bind = registry.resolve(intent)
     # Server is authoritative for keybind/macro and the safety/confirm flag.
@@ -115,8 +121,9 @@ async def command(req: CommandRequest) -> CommandResponse:
         if wav:
             audio_b64 = base64.b64encode(wav).decode("ascii")
 
-    log.info("cmd: %r -> intent=%s (%.2f) key=%s confirm=%s",
-             req.text, intent, conf, keybind, confirm_required)
+    log.info("cmd: %r -> intent=%s (%.2f) key=%s confirm=%s clarify=%s%s",
+             req.text, intent, conf, keybind, confirm_required, clarify,
+             f" via {chosen!r}" if chosen and chosen != req.text else "")
     return CommandResponse(
         intent=intent,
         keybind=keybind,
@@ -126,6 +133,9 @@ async def command(req: CommandRequest) -> CommandResponse:
         confirm_required=confirm_required,
         response_text=response_text,
         audio=audio_b64,
+        confidence=conf,
+        clarify=clarify,
+        chosen_text=chosen,
     )
 
 

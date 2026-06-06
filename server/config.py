@@ -38,6 +38,9 @@ class ServerConfig:
     # Embedding intent classifier (the LLM-free intent engine).
     classifier_model: str = "minishlab/potion-base-32M"
     classifier_reject: float = 0.45  # below this cosine -> 'chat' (not a command)
+    # Gray zone: a command scoring in [reject, clarify) is too borderline to fire
+    # blind, so the response sets clarify=True and the client asks "Say again?".
+    classifier_clarify: float = 0.55
     # Optional shared secret (STELLA_API_TOKEN). When set, every route except
     # /health requires 'Authorization: Bearer <token>'. Unset = open (local use).
     api_token: str | None = None
@@ -73,5 +76,6 @@ def load_config(settings_path: Path | None = None) -> ServerConfig:
         tts=tts_cfg,
         classifier_model=_env("STELLA_CLASSIFIER_MODEL", clf.get("model", ServerConfig.classifier_model)),
         classifier_reject=float(clf.get("reject_threshold", ServerConfig.classifier_reject)),
+        classifier_clarify=float(clf.get("clarify_threshold", ServerConfig.classifier_clarify)),
         api_token=_env("STELLA_API_TOKEN", srv.get("api_token")),
     )

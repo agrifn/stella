@@ -46,6 +46,17 @@ class ClientConfig:
     # than these so silence/noise never becomes a command.
     stt_no_speech_prob: float = 0.6
     stt_avg_logprob: float = -1.3
+    # ASR n-best rescoring: when the top transcript is not already a confident command,
+    # transcribe a couple of sampled alternates and let the server pick the most
+    # confident command among them. Only runs on the uncertain path (no added latency
+    # when the first transcript is already a clean command).
+    nbest_enabled: bool = True
+    nbest_count: int = 3                 # total candidates (top-1 + alternates)
+    # Follow-up mode: after a command fires, listen briefly for the next one with no
+    # PTT press / wake word. Lets you chain commands. The window is how long you have
+    # to START speaking; it re-arms after each command and closes on silence.
+    follow_up_enabled: bool = True
+    follow_up_window: float = 2.5
     execute_keys: bool = True        # actually press keys (False = dry-run / log only)
     hold_duration: float = 1.5       # seconds to hold a 'hold' key (e.g. self destruct)
     # CHAT mode: by default just type at the cursor and press Enter (the user
@@ -99,6 +110,10 @@ def load_client_config(settings_path: Path | None = None) -> ClientConfig:
         wake_capture_max=float(client.get("wake_capture_max", ClientConfig.wake_capture_max)),
         stt_no_speech_prob=float(client.get("stt_no_speech_prob", ClientConfig.stt_no_speech_prob)),
         stt_avg_logprob=float(client.get("stt_avg_logprob", ClientConfig.stt_avg_logprob)),
+        nbest_enabled=bool(client.get("nbest_enabled", ClientConfig.nbest_enabled)),
+        nbest_count=int(client.get("nbest_count", ClientConfig.nbest_count)),
+        follow_up_enabled=bool(client.get("follow_up_enabled", ClientConfig.follow_up_enabled)),
+        follow_up_window=float(client.get("follow_up_window", ClientConfig.follow_up_window)),
         execute_keys=bool(client.get("execute_keys", ClientConfig.execute_keys)),
         hold_duration=float(client.get("hold_duration", ClientConfig.hold_duration)),
         chat_open_key=client.get("chat_open_key", ClientConfig.chat_open_key),

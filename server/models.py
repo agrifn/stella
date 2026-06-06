@@ -10,6 +10,10 @@ class CommandRequest(BaseModel):
     """Incoming transcribed text from the desktop client."""
     text: str = Field(..., min_length=1, description="Transcribed pilot speech")
     speak: bool = Field(True, description="Whether to synthesize TTS audio in the reply")
+    candidates: list[str] = Field(
+        default_factory=list,
+        description="Optional ASR n-best alternates; the server classifies all and "
+                    "returns the most confident command (n-best rescoring)")
 
 
 class SpeakRequest(BaseModel):
@@ -43,6 +47,9 @@ class CommandResponse(BaseModel):
     response_text: str = ""
     audio: Optional[str] = Field(None, description="base64-encoded WAV, or null")
     audio_format: str = "wav"
+    confidence: float = Field(1.0, description="Classifier confidence for the chosen intent")
+    clarify: bool = Field(False, description="Borderline match -> client should ask 'Say again?'")
+    chosen_text: str = Field("", description="Which candidate transcript won (n-best rescoring)")
 
 
 class HealthResponse(BaseModel):

@@ -12,7 +12,8 @@
   },
   "classifier": {
     "model": "minishlab/potion-base-32M",
-    "reject_threshold": 0.45
+    "reject_threshold": 0.45,
+    "clarify_threshold": 0.55
   },
   "client": {
     "ptt_key": "right ctrl",

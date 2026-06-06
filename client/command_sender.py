@@ -20,6 +20,9 @@ class CommandResult:
     audio_b64: Optional[str]
     sequence: Optional[list] = None  # macro steps (list of dicts), or empty
     hold_duration: Optional[float] = None  # seconds to hold (None = client default)
+    confidence: float = 1.0          # classifier confidence for the chosen intent
+    clarify: bool = False            # borderline match -> client should ask "Say again?"
+    chosen_text: str = ""            # which candidate transcript won (n-best rescoring)
 
 
 class CommandSender:
@@ -34,10 +37,14 @@ class CommandSender:
         if token:  # optional shared secret; server requires it only when configured
             self._session.headers["Authorization"] = f"Bearer {token}"
 
-    def send(self, text: str, speak: bool = True) -> CommandResult:
+    def send(self, text: str, speak: bool = True,
+             candidates: list[str] | None = None) -> CommandResult:
+        body = {"text": text, "speak": speak}
+        if candidates:
+            body["candidates"] = candidates  # ASR n-best alternates for rescoring
         r = self._session.post(
             f"{self._url}/command",
-            json={"text": text, "speak": speak},
+            json=body,
             timeout=self._timeout,
         )
         r.raise_for_status()
@@ -51,6 +58,9 @@ class CommandSender:
             audio_b64=d.get("audio"),
             sequence=d.get("sequence") or [],
             hold_duration=d.get("hold_duration"),
+            confidence=float(d.get("confidence", 1.0)),
+            clarify=bool(d.get("clarify", False)),
+            chosen_text=d.get("chosen_text", ""),
         )
 
     def speak(self, text: str, route: str = "chat") -> Optional[str]:

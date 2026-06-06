@@ -60,6 +60,29 @@ def _power_rule(t: str):
     return _POWER_MAP.get((pool, direction))
 
 
+def select_best(results: list[tuple[str, float, str]], chat_label: str = CHAT):
+    """Pick the winner from classified candidates for n-best rescoring.
+
+    `results` is a list of (intent, score, text). Returns the highest-scoring COMMAND
+    (intent != chat); if no candidate is a command, returns the highest-scoring chat
+    result. Pure (no model), so it is unit-testable. Ties keep the first seen, so the
+    original transcript (passed first) wins over a later alternate of equal score.
+    """
+    cmd_best = None
+    chat_best = None
+    for intent, score, text in results:
+        if intent != chat_label:
+            if cmd_best is None or score > cmd_best[1]:
+                cmd_best = (intent, score, text)
+        elif chat_best is None or score > chat_best[1]:
+            chat_best = (chat_label, score, text)
+    if cmd_best is not None:
+        return cmd_best
+    if chat_best is not None:
+        return chat_best
+    return (chat_label, 0.0, "")
+
+
 def _disambig(t: str):
     if re.search(r"\b(reset|balance|equalize|equalise|default|even)\b", t) and "power" in t:
         return "reset_power"
@@ -104,3 +127,20 @@ class IntentClassifier:
         if score < self.reject_threshold:
             return CHAT, score
         return str(self._labels[j]), score
+
+    def classify_best(self, texts: list[str]) -> tuple[str, float, str]:
+        """N-best rescoring: classify several ASR candidates and return
+        (intent, confidence, chosen_text) for the most confident command among them.
+        Falls back to chat if none is a command. The first text is the primary
+        transcript and wins ties."""
+        results, seen = [], set()
+        for t in texts:
+            key = (t or "").lower().strip()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            intent, score = self.classify(t)
+            results.append((intent, score, t))
+        if not results:
+            return CHAT, 0.0, ""
+        return select_best(results)

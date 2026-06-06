@@ -46,14 +46,10 @@ class STTHandler:
         """Run one inference so the first real transcription isn't slow."""
         self.transcribe(np.zeros(self.samplerate, dtype=np.float32))
 
-    def transcribe(self, audio: np.ndarray) -> str:
-        """Transcribe a float32 mono array sampled at 16 kHz. Returns text."""
-        if audio is None or len(audio) == 0:
-            return ""
-        audio = np.asarray(audio, dtype=np.float32).reshape(-1)
-        segments, _info = self._model.transcribe(audio, vad_filter=True, language="en")
-        # Keep only confident speech segments; Whisper marks noise/silence with a
-        # high no_speech_prob and/or very low avg_logprob, then hallucinates text.
+    def _filter(self, segments) -> str:
+        """Join confident speech segments into a transcript. Whisper marks
+        noise/silence with a high no_speech_prob and/or very low avg_logprob, then
+        hallucinates text; drop those and the common silence hallucinations."""
         kept = []
         for seg in segments:
             if getattr(seg, "no_speech_prob", 0.0) > self._max_no_speech:
@@ -68,3 +64,42 @@ class STTHandler:
         if text.lower().strip(" .!?,") in _HALLUCINATIONS:
             return ""
         return text
+
+    def transcribe(self, audio: np.ndarray) -> str:
+        """Transcribe a float32 mono array sampled at 16 kHz. Returns text. Uses
+        Whisper's default temperature-fallback beam search (the robust best path)."""
+        if audio is None or len(audio) == 0:
+            return ""
+        audio = np.asarray(audio, dtype=np.float32).reshape(-1)
+        segments, _info = self._model.transcribe(audio, vad_filter=True, language="en")
+        return self._filter(segments)
+
+    def transcribe_nbest(self, audio: np.ndarray, n: int = 3) -> list[str]:
+        """Return up to `n` DISTINCT candidate transcripts, best first, for n-best
+        intent rescoring. The first is the robust beam-best (same as transcribe());
+        the rest come from sampled passes (temperature > 0), which diverge only when
+        the audio is ambiguous - on clear speech they collapse to one candidate, so
+        this stays cheap. faster-whisper's high-level API returns a single hypothesis
+        per call, so alternates are drawn from extra sampled decodes."""
+        if audio is None or len(audio) == 0:
+            return []
+        audio = np.asarray(audio, dtype=np.float32).reshape(-1)
+        cands: list[str] = []
+
+        def add(text: str) -> None:
+            t = (text or "").strip()
+            if t and t.lower() not in {c.lower() for c in cands}:
+                cands.append(t)
+
+        add(self.transcribe(audio))
+        for temp in (0.4, 0.8):
+            if len(cands) >= n:
+                break
+            try:
+                segments, _info = self._model.transcribe(
+                    audio, vad_filter=True, language="en",
+                    temperature=temp, beam_size=1, best_of=max(2, n))
+                add(self._filter(segments))
+            except Exception:  # noqa: BLE001 - an alternate failing must not kill the path
+                log.exception("n-best sampled decode failed (temp=%.1f)", temp)
+        return cands[:n]

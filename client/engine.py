@@ -60,6 +60,18 @@ class StellaEngine:
         self._min_dur = cfg.min_speech_seconds
         self._min_rms = cfg.min_speech_rms
 
+        # ASR n-best rescoring + "say again?" recovery + follow-up chaining.
+        self._nbest = cfg.nbest_enabled
+        self._nbest_n = cfg.nbest_count
+        self._follow_enabled = cfg.follow_up_enabled
+        self._follow_window = cfg.follow_up_window
+        self._follow_armed = False  # set after a command fires; the run loop captures next
+        # Track TTS playback so follow-up capture never starts while an ack is playing
+        # (else STELLA would hear its own voice). Incremented synchronously in the speak
+        # helpers BEFORE the playback thread starts, to avoid a start-latency race.
+        self._play_lock = threading.Lock()
+        self._playing = 0
+
         # Wake/sleep: when asleep, PTT utterances are ignored until woken.
         self.active = not cfg.start_asleep
         self._auto_sleep = cfg.auto_sleep_seconds
@@ -152,8 +164,9 @@ class StellaEngine:
         self.stt.warm()
         try:
             self._emit("status", text=f"server: {self.sender.health().get('status')}")
-            # Warm the LLM too so the first real command isn't a cold model load.
-            self._emit("status", text="warming language model...")
+            # Warm the server path (classifier + first request) so the first real
+            # command isn't a cold round-trip.
+            self._emit("status", text="warming classifier...")
             self.sender.send("ready", speak=False)
         except Exception as e:  # noqa: BLE001
             self._emit("status", text=f"server unreachable: {e}")
@@ -211,30 +224,88 @@ class StellaEngine:
         segments = split_commands(text)
         if len(segments) > 1 or (segments and segments[0][1] > 1):
             log.info("multi-command: %r -> %s", text, segments)
+        # n-best rescoring and "say again?" recovery use the raw audio, and only make
+        # sense for a single, whole-utterance command - a clean multi-command split is
+        # already unambiguous, so those parts go straight through.
+        single = len(segments) == 1
+        acted = False
         for seg_text, count in segments:
-            self._handle_segment(seg_text, count, t_stt, dur)
+            if self._handle_segment(seg_text, count, t_stt, dur,
+                                    audio=audio if single else None):
+                acted = True
 
-    def _handle_segment(self, text: str, count: int, t_stt: float, dur: float):
+        # Follow-up mode: after a real command, arm a short hands-free listen so the
+        # next command needs no PTT/wake. The run loop performs the capture (gated on
+        # ack playback) and re-arms via process() if another command fires.
+        if acted and self._follow_enabled and self.active and self.mode == "COMMAND":
+            self._follow_armed = True
+
+    @staticmethod
+    def _is_command(res) -> bool:
+        """True if the server resolved an actionable keybind/macro (not a chat reply)."""
+        return bool(res and (res.keybind or res.sequence))
+
+    def _handle_segment(self, text: str, count: int, t_stt: float, dur: float,
+                        audio=None) -> bool:
         """Classify and act on one sub-command, repeating a normal command `count`
         times. Request intent ONLY (speak=False) so TTS synthesis does not sit in the
-        action path; we voice the reply separately, after acting."""
+        action path; we voice the reply separately, after acting. Returns True if a
+        real command actually executed (used to arm follow-up mode).
+
+        When `audio` is provided (single, whole-utterance command), two recovery layers
+        kick in if the first transcript is not already a confident command:
+          - ASR n-best rescoring: transcribe sampled alternates and let the server pick
+            the most confident command among them.
+          - "Say again?": a still-borderline match asks the pilot to repeat once,
+            rather than firing a guess."""
         t1 = time.time()
         try:
             res = self.sender.send(text, speak=False)
         except Exception as e:  # noqa: BLE001
             self._emit("error", text=f"server error: {e}")
-            return
+            return False
         t_srv = time.time() - t1
-        log.info("LLM %.2fs -> intent=%s key=%s x%d", t_srv, res.intent, res.keybind, count)
+        log.info("classify %.2fs -> intent=%s (%.2f) key=%s clarify=%s x%d",
+                 t_srv, res.intent, res.confidence, res.keybind, res.clarify, count)
 
+        # n-best rescoring: only on the uncertain path (top transcript was chat or a
+        # borderline command), and only when we kept the audio.
+        if audio is not None and self._nbest and (not self._is_command(res) or res.clarify):
+            alts = [c for c in self.stt.transcribe_nbest(audio, self._nbest_n)
+                    if c and c.lower() != text.lower()]
+            if alts:
+                log.info("n-best alternates: %r", alts)
+                try:
+                    res2 = self.sender.send(text, speak=False, candidates=alts)
+                except Exception as e:  # noqa: BLE001
+                    res2 = None
+                    log.warning("n-best rescoring failed: %s", e)
+                # Adopt the rescored result if it is a command and an improvement
+                # (the first pass was not a command, or the new one is confident).
+                if self._is_command(res2) and (not self._is_command(res) or not res2.clarify):
+                    res = res2
+                    if res.chosen_text and res.chosen_text.lower() != text.lower():
+                        self._emit("transcript", text=res.chosen_text)
+
+        # Still a borderline command: ask once instead of guessing.
+        if audio is not None and self._is_command(res) and res.clarify:
+            res = self._say_again()
+            if res is None:
+                return False
+
+        return self._act_on(res, count, t_stt, dur)
+
+    def _act_on(self, res, count: int, t_stt: float, dur: float) -> bool:
+        """Carry out a resolved result: chat reply, confirm-gated command, or a normal
+        command repeated `count` times. Returns True only if a command executed."""
         self._emit("response", intent=res.intent, keybind=res.keybind,
                    confirm=res.confirm_required, text=res.response_text)
 
         # No action (chat intent, or a mis-split part that matched no command): speak
-        # via Chatterbox. An over-split fails safe here - no keys are sent.
-        if not res.keybind and not res.sequence:
+        # via the chat voice. An over-split fails safe here - no keys are sent.
+        if not self._is_command(res):
             self._speak_async(res.response_text, route="chat")
-            return
+            return False
 
         # Dangerous command: speak the prompt, then wait for a spoken yes/no. A
         # dangerous command is never auto-repeated - it fires once after confirmation.
@@ -249,16 +320,50 @@ class StellaEngine:
             if not is_affirmative(conf_text):
                 self._emit("cancelled", intent=res.intent)
                 self._speak_async("Cancelled.", route="ack")
-                return
+                return False
             self._emit("confirmed", intent=res.intent)
             self._execute(res)
             self._speak_async("Confirmed.", route="ack")
-            return
+            return True
 
         # Normal command: ACT IMMEDIATELY (count times), then voice the ack via Piper.
         self._execute(res, count=count)
-        self._emit("status", text=f"STT {t_stt:.1f}s | LLM {t_srv:.1f}s | {dur:.0f}s audio")
+        self._emit("status", text=f"STT {t_stt:.1f}s | {dur:.0f}s audio")
         self._speak_async(res.response_text, route="ack")
+        return True
+
+    def _say_again(self):
+        """Borderline command recovery: ask the pilot to repeat once, capture the
+        answer hands-free, and rescore it. Returns a confident CommandResult to act on,
+        or None to abort (nothing caught / still unclear)."""
+        self._speak_blocking("Say again?", route="ack")
+        self._emit("status", text="say again?")
+        self._mute_wake(True)
+        try:
+            audio = self.recorder.record_hands_free(
+                silence_s=self.cfg.wake_capture_silence,
+                start_grace_s=self.cfg.wake_capture_grace,
+                max_s=self.cfg.wake_capture_max,
+                rms_gate=self.cfg.min_speech_rms,
+            )
+        finally:
+            self._mute_wake(False)
+        text = self.stt.transcribe(audio) if audio is not None and len(audio) else ""
+        self._emit("transcript", text=text)
+        if not text:
+            self._speak_async("Didn't catch that.", route="ack")
+            return None
+        alts = ([c for c in self.stt.transcribe_nbest(audio, self._nbest_n)
+                 if c and c.lower() != text.lower()] if self._nbest else [])
+        try:
+            res = self.sender.send(text, speak=False, candidates=alts)
+        except Exception as e:  # noqa: BLE001
+            self._emit("error", text=f"server error: {e}")
+            return None
+        if self._is_command(res) and not res.clarify:
+            return res
+        self._speak_async("Didn't catch that.", route="ack")
+        return None
 
     def _mute_wake(self, on: bool) -> None:
         """Pause/resume the wake-word listener so STELLA does not hear its own ack (or
@@ -279,33 +384,46 @@ class StellaEngine:
                     self._wake_event.clear()  # drop any wake fired while we were muted
                     self._wake_listener.set_enabled(True)
 
+    def _set_playing(self, delta: int) -> None:
+        """Track in-flight TTS playback so follow-up capture waits for it to finish."""
+        with self._play_lock:
+            self._playing = max(0, self._playing + delta)
+
     def _speak_async(self, text: str, route: str = "chat"):
         """Fetch TTS and play it without blocking the loop (voice trails the action).
         route='ack' -> fast Piper (command feedback); 'chat' -> Chatterbox."""
         if not text:
             return
+        self._set_playing(1)  # mark BEFORE the thread starts (avoid follow-up race)
         def run():
-            audio = self.sender.speak(text, route)
-            if not audio:
-                return
-            self._mute_wake(True)  # don't let our own voice trip the wake word
             try:
-                self.player.play_b64(audio, blocking=True)  # block in THIS thread only
+                audio = self.sender.speak(text, route)
+                if not audio:
+                    return
+                self._mute_wake(True)  # don't let our own voice trip the wake word
+                try:
+                    self.player.play_b64(audio, blocking=True)  # block in THIS thread only
+                finally:
+                    self._mute_wake(False)
             finally:
-                self._mute_wake(False)
+                self._set_playing(-1)
         threading.Thread(target=run, daemon=True).start()
 
     def _speak_blocking(self, text: str, route: str = "chat"):
         if not text:
             return
-        audio = self.sender.speak(text, route)
-        if not audio:
-            return
-        self._mute_wake(True)
+        self._set_playing(1)
         try:
-            self.player.play_b64(audio, blocking=True)
+            audio = self.sender.speak(text, route)
+            if not audio:
+                return
+            self._mute_wake(True)
+            try:
+                self.player.play_b64(audio, blocking=True)
+            finally:
+                self._mute_wake(False)
         finally:
-            self._mute_wake(False)
+            self._set_playing(-1)
 
     def _execute(self, res, count: int = 1):
         count = max(1, count)
@@ -351,6 +469,27 @@ class StellaEngine:
                         audio = self.recorder.record_hands_free(
                             silence_s=self.cfg.wake_capture_silence,
                             start_grace_s=self.cfg.wake_capture_grace,
+                            max_s=self.cfg.wake_capture_max,
+                            rms_gate=self.cfg.min_speech_rms,
+                        )
+                    finally:
+                        self._emit("listening", on=False)
+                        self._mute_wake(False)
+                elif self._follow_armed and self.active:
+                    # Follow-up window: listen for the next command with no PTT/wake.
+                    # Wait for any ack still playing so we don't capture our own voice;
+                    # re-arm and re-check next tick rather than blocking here.
+                    if self._playing > 0:
+                        time.sleep(0.03)
+                        continue
+                    self._follow_armed = False  # consumed; process() re-arms on a command
+                    self._mute_wake(True)
+                    self._emit("listening", on=True)
+                    self._emit("status", text="listening (follow-up)")
+                    try:
+                        audio = self.recorder.record_hands_free(
+                            silence_s=self.cfg.wake_capture_silence,
+                            start_grace_s=self._follow_window,
                             max_s=self.cfg.wake_capture_max,
                             rms_gate=self.cfg.min_speech_rms,
                         )
