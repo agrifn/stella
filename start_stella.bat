@@ -8,4 +8,6 @@ if %errorlevel% neq 0 (
   exit /b
 )
 cd /d "%~dp0"
+REM Make sure the WSL2 Docker backend is up (and stays up) before the overlay starts.
+call "%~dp0start_backend.bat"
 client\.venv\Scripts\python.exe -m client.app %*
