@@ -69,5 +69,8 @@ class ChatInjector:
         # typewrite sends each character; pydirectinput handles shift for uppercase.
         pdi.typewrite(text, interval=0.01)
         if self.send_key:
+            # Let the field register the last characters before submitting; an Enter
+            # that lands on the heels of the final keystroke is sometimes dropped.
+            time.sleep(0.05)
             pdi.press(self.send_key)
-        log.info("typed: %r", text)
+        log.info("typed: %r (sent: %s)", text, bool(self.send_key))
