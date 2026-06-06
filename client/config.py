@@ -84,6 +84,11 @@ class ClientConfig:
     overlay_opacity: float = 0.85
     overlay_margin: int = 24
     overlay_scale: float = 0.8         # HUD size multiplier (smaller < 1.0 < larger)
+    overlay_width: int = 300           # base HUD width in px (before scale)
+    # Steam-style auto-hide: fade the HUD in on activity, fade it out after this many
+    # idle seconds (it stays up while listening or while a warning is shown).
+    overlay_auto_hide: bool = True
+    overlay_hide_seconds: float = 4.0
 
 
 def load_client_config(settings_path: Path | None = None) -> ClientConfig:
@@ -132,4 +137,7 @@ def load_client_config(settings_path: Path | None = None) -> ClientConfig:
         overlay_opacity=float(client.get("overlay_opacity", ClientConfig.overlay_opacity)),
         overlay_margin=int(client.get("overlay_margin", ClientConfig.overlay_margin)),
         overlay_scale=float(client.get("overlay_scale", ClientConfig.overlay_scale)),
+        overlay_width=int(client.get("overlay_width", ClientConfig.overlay_width)),
+        overlay_auto_hide=bool(client.get("overlay_auto_hide", ClientConfig.overlay_auto_hide)),
+        overlay_hide_seconds=float(client.get("overlay_hide_seconds", ClientConfig.overlay_hide_seconds)),
     )

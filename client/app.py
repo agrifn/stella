@@ -115,7 +115,8 @@ def main(argv=None):
     app.setQuitOnLastWindowClosed(False)
 
     overlay = Overlay(cfg.overlay_corner, cfg.overlay_opacity, cfg.overlay_margin,
-                      cfg.overlay_scale)
+                      cfg.overlay_scale, cfg.overlay_width,
+                      cfg.overlay_auto_hide, cfg.overlay_hide_seconds)
     bridge = Bridge()
     bridge.status.connect(overlay.set_status)
     bridge.mode.connect(overlay.set_mode)

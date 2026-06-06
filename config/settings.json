@@ -43,6 +43,9 @@
     "overlay_corner": "bottom-right",
     "overlay_opacity": 0.85,
     "overlay_margin": 24,
-    "overlay_scale": 0.8
+    "overlay_scale": 0.8,
+    "overlay_width": 300,
+    "overlay_auto_hide": true,
+    "overlay_hide_seconds": 4.0
   }
 }
