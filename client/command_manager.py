@@ -1,11 +1,12 @@
 """STELLA Command Manager - the iOS-style GUI for commands, voice, and settings.
 
 Implements the approved Claude Design prototype (design bundle 'iOS UI
-Redesign'): a header with health chip, light/dark toggle, and Launch button; a
-sidebar with five colored-icon sections (Commands, Test Console, Voice,
-Settings, Overlay HUD); and grouped-card pages in client/ui/. Still a thin
-client over the server's /commands CRUD API, so edits take effect immediately
-(the server persists keybinds.json and the in-process classifier hot-reloads).
+Redesign', navStyle=tabs): a header with health chip, centered tab bar for the
+five sections (Commands, Test Console, Voice, Settings, Overlay HUD),
+light/dark toggle, and Launch button; and grouped-card pages in client/ui/.
+Still a thin client over the server's /commands CRUD API, so edits take effect
+immediately (the server persists keybinds.json and the in-process classifier
+hot-reloads).
 
     client\\.venv\\Scripts\\python -m client.command_manager
 """
@@ -16,7 +17,7 @@ import os
 import sys
 
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtWidgets import (QApplication, QDialog, QFrame, QHBoxLayout, QLabel,
+from PyQt6.QtWidgets import (QApplication, QDialog, QHBoxLayout, QLabel,
                              QMainWindow, QMessageBox, QPushButton,
                              QStackedWidget, QVBoxLayout, QWidget)
 
@@ -89,45 +90,15 @@ class CaptureDialog(QDialog):
             self.accept()
 
 
-# Sidebar entries: (page key, label, icon glyph, icon background color).
+# Tab bar entries: (page key, label). The prototype's navStyle tweak offered
+# sidebar vs tabs; this build ships the tabs variant (centered in the header).
 _NAV = [
-    ("commands", "Commands", "⌘", "#0A84FF"),
-    ("test", "Test Console", "⌖", "#34C759"),
-    ("voice", "Voice", "∿", "#AF52DE"),
-    ("settings", "Settings", "⚙", "#8E8E93"),
-    ("overlay", "Overlay HUD", "▣", "#FF9F0A"),
+    ("commands", "Commands"),
+    ("test", "Test Console"),
+    ("voice", "Voice"),
+    ("settings", "Settings"),
+    ("overlay", "Overlay HUD"),
 ]
-
-
-class _NavItem(QWidget):
-    def __init__(self, window: "MainWindow", key: str, label: str, glyph: str, color: str):
-        super().__init__()
-        self._window = window
-        self.key = key
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-        lay = QHBoxLayout(self)
-        lay.setContentsMargins(10, 7, 10, 7)
-        lay.setSpacing(10)
-        icon = QLabel(glyph)
-        icon.setFixedSize(24, 24)
-        icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        icon.setStyleSheet(f"background: {color}; color: #fff; border-radius: 6px;"
-                           " font-size: 13px;")
-        self.label = QLabel(label)
-        lay.addWidget(icon)
-        lay.addWidget(self.label, 1)
-        self.set_active(False)
-
-    def set_active(self, on: bool) -> None:
-        t = self._window.theme
-        self.setStyleSheet(f"background: {t.accent_soft if on else 'transparent'};"
-                           " border-radius: 9px;")
-        self.label.setStyleSheet(
-            f"color: {t.accent if on else t.text}; font-size: 13px; font-weight: 500;"
-            " background: transparent;")
-
-    def mousePressEvent(self, _e) -> None:  # noqa: N802 (Qt signature)
-        self._window.go(self.key)
 
 
 class MainWindow(QMainWindow):
@@ -167,9 +138,15 @@ class MainWindow(QMainWindow):
         self.health_chip = QLabel("●  Checking backend…")
         self.health_chip.setObjectName("healthChip")
         hl.addWidget(self.health_chip)
+        # Centered tab navigation (the design's navStyle=tabs variant).
+        hl.addStretch(1)
+        self.tabs = Segmented(self.theme, list(_NAV), current="commands")
+        self.tabs.changed.connect(self.go)
+        hl.addWidget(self.tabs)
+        hl.addStretch(1)
         self.toast_label = QLabel("")
         self.toast_label.setObjectName("rowSub")
-        hl.addWidget(self.toast_label, 1, Qt.AlignmentFlag.AlignCenter)
+        hl.addWidget(self.toast_label)
         self.theme_seg = Segmented(self.theme, [("light", "☀"), ("dark", "☾")],
                                    current=self.theme.name)
         self.theme_seg.changed.connect(self.set_theme)
@@ -180,26 +157,9 @@ class MainWindow(QMainWindow):
         hl.addWidget(launch)
         outer.addWidget(header)
 
-        # ---- Body: sidebar + pages ----
+        # ---- Body: the page stack (navigation lives in the header tabs) ----
         body = QHBoxLayout()
         body.setSpacing(0)
-        sidebar = QWidget()
-        sidebar.setObjectName("sidebar")
-        sidebar.setFixedWidth(206)
-        sl = QVBoxLayout(sidebar)
-        sl.setContentsMargins(10, 14, 10, 14)
-        sl.setSpacing(2)
-        self._nav: dict[str, _NavItem] = {}
-        for key, label, glyph, color in _NAV:
-            item = _NavItem(self, key, label, glyph, color)
-            self._nav[key] = item
-            sl.addWidget(item)
-        sl.addStretch(1)
-        foot = QLabel("runs fully local")
-        foot.setObjectName("sidebarFootnote")
-        foot.setContentsMargins(10, 8, 10, 0)
-        sl.addWidget(foot)
-        body.addWidget(sidebar)
 
         from .ui.commands_page import CommandsPage
         from .ui.overlay_page import OverlayPage
@@ -234,8 +194,7 @@ class MainWindow(QMainWindow):
 
     # -- navigation / theme -------------------------------------------------
     def go(self, key: str) -> None:
-        for k, item in self._nav.items():
-            item.set_active(k == key)
+        self.tabs.set_value(key)  # no-op when the click came from the tab itself
         self.pages.setCurrentIndex(self._page_index[key])
 
     def _load_theme_name(self) -> str:
@@ -265,12 +224,7 @@ class MainWindow(QMainWindow):
             " stop:0 #38B6E8, stop:1 #4A5FE0); color: #fff; border-radius: 8px;"
             " font-size: 13px;")
         self.theme_seg.set_theme(t)
-        for item in self._nav.values():
-            item.set_active(False)
-        current = self.pages.currentIndex() if hasattr(self, "pages") else 0
-        for key, idx in getattr(self, "_page_index", {}).items():
-            if idx == current:
-                self._nav[key].set_active(True)
+        self.tabs.set_theme(t)
         for page in (self.page_commands, self.page_test, self.page_voice,
                      self.page_settings, self.page_overlay):
             page.set_theme(t)
