@@ -325,10 +325,11 @@ class VoicePage(QWidget):
             fake_btn = QPushButton()
             self._download(name.strip(), fake_btn)
 
-    # Multi-sentence so the pace, cadence, and inter-sentence pause tuning are all
-    # audible in one preview. route="ack" hits the command voice path.
-    _PREVIEW_LINE = ("Shields at maximum. Quantum drive is spooling, Commander. "
-                     "I'd recommend we leave before our friends arrive.")
+    # One flowing sentence (commas, no sentence breaks) so the pace and cadence
+    # tuning are audible without the white-noise burst Piper can emit in the
+    # inter-sentence silence gap. route="ack" hits the command voice path.
+    _PREVIEW_LINE = ("All systems are online and holding steady, Commander, "
+                     "quantum drive spooled and ready when you are.")
 
     def _preview(self) -> None:
         if self._busy is not None or not self._active:
