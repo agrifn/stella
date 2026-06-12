@@ -33,6 +33,8 @@ from .models import (
     SpeakResponse,
     VoiceRequest,
     VoicesResponse,
+    VoiceTuning,
+    VoiceTuningResponse,
 )
 from .tts_handler import TTSHandler
 
@@ -175,6 +177,38 @@ async def download_voice(req: VoiceRequest) -> VoicesResponse:
     except Exception as e:  # noqa: BLE001 - bad name / network / 404
         raise HTTPException(status_code=400, detail=f"download failed: {e}") from e
     return VoicesResponse(active=tts.voice, available=tts.available_voices())
+
+
+# --- Voice tuning (Piper naturalness knobs) --------------------------------
+def _tuning_response(tts, voice: str) -> VoiceTuningResponse:
+    return VoiceTuningResponse(
+        voice=voice,
+        tuning=VoiceTuning(**tts.tuning_for(voice)),
+        is_default=voice not in tts._tuning,  # noqa: SLF001 - server-internal read
+    )
+
+
+@app.get("/voices/tuning", response_model=VoiceTuningResponse)
+async def get_tuning(voice: str | None = None) -> VoiceTuningResponse:
+    """Effective synthesis tuning for a voice (defaults to the active voice)."""
+    tts = app.state.tts
+    return _tuning_response(tts, voice or tts.voice)
+
+
+@app.put("/voices/tuning", response_model=VoiceTuningResponse)
+async def set_tuning(patch: VoiceTuning, voice: str | None = None) -> VoiceTuningResponse:
+    """Set per-voice tuning. Omitted fields keep their current value; an all-null
+    body resets the voice to the config defaults."""
+    tts = app.state.tts
+    target = voice or tts.voice
+    current = tts.tuning_for(target)
+    sent = patch.model_dump(exclude_none=True)
+    if sent:
+        current.update(sent)
+        tts.set_tuning(target, current)
+    else:
+        tts.set_tuning(target, {})  # reset
+    return _tuning_response(tts, target)
 
 
 @app.get("/voices/{name}/bundle")

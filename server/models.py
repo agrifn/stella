@@ -86,6 +86,26 @@ class VoiceRequest(BaseModel):
     voice: str = Field(..., description="Piper voice name, e.g. en_US-amy-medium")
 
 
+class VoiceTuning(BaseModel):
+    """Per-voice Piper synthesis knobs - the naturalness controls. All optional on
+    a PUT; omitted fields keep their current value. Bounds match Piper's useful
+    ranges so the GUI sliders and the API agree."""
+    length_scale: Optional[float] = Field(None, ge=0.5, le=2.0,
+        description="Phoneme duration; >1 slower/calmer, <1 faster")
+    noise_scale: Optional[float] = Field(None, ge=0.0, le=1.5,
+        description="Voice expressiveness/variation")
+    noise_w_scale: Optional[float] = Field(None, ge=0.0, le=2.0,
+        description="Phoneme-timing variation (cadence; higher = less robotic)")
+    sentence_silence: Optional[float] = Field(None, ge=0.0, le=1.5,
+        description="Seconds of pause between sentences")
+
+
+class VoiceTuningResponse(BaseModel):
+    voice: str
+    tuning: VoiceTuning
+    is_default: bool = Field(..., description="True if this voice has no saved override")
+
+
 class CommandUpdate(BaseModel):
     """Partial update; only provided fields change. 'intent' is the path, not editable here."""
     key: Optional[str] = None

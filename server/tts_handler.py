@@ -72,6 +72,11 @@ class TTSHandler:
         self._dir = cfg.voices_dir
         self._active_file = self._dir / "active.txt"
         self._voice = self._load_active() or cfg.voice
+        # Per-voice synthesis tuning overrides (length/noise/silence). Lives beside
+        # the voices so a voice keeps its dialed-in delivery across restarts; any
+        # voice without an entry uses the TTSConfig defaults.
+        self._tuning_file = self._dir / "tuning.json"
+        self._tuning: dict[str, dict] = self._load_tuning()
         self._cache: "OrderedDict[tuple, bytes]" = OrderedDict()
         # Per-route engines. Acks default to Piper (fast); chat falls back to the
         # legacy STELLA_TTS_ENGINE so existing single-engine setups keep working.
@@ -120,6 +125,53 @@ class TTSHandler:
 
     def _model_path(self, voice: Optional[str] = None) -> Path:
         return self._dir / f"{voice or self._voice}.onnx"
+
+    # -- synthesis tuning (per-voice naturalness knobs) ------------------
+    _TUNING_KEYS = ("length_scale", "noise_scale", "noise_w_scale", "sentence_silence")
+
+    def _load_tuning(self) -> dict[str, dict]:
+        try:
+            data = json.loads(self._tuning_file.read_text(encoding="utf-8"))
+            return {k: v for k, v in data.items() if isinstance(v, dict)}
+        except (OSError, ValueError):
+            return {}
+
+    def _save_tuning(self) -> None:
+        try:
+            self._tuning_file.write_text(json.dumps(self._tuning, indent=2), encoding="utf-8")
+        except OSError:
+            log.warning("could not persist voice tuning")
+
+    def tuning_for(self, voice: Optional[str] = None) -> dict:
+        """Effective tuning for a voice: its saved overrides on top of the config
+        defaults. Always returns all four keys, so callers never miss one."""
+        base = {
+            "length_scale": self._cfg.length_scale,
+            "noise_scale": self._cfg.noise_scale,
+            "noise_w_scale": self._cfg.noise_w_scale,
+            "sentence_silence": self._cfg.sentence_silence,
+        }
+        override = self._tuning.get(voice or self._voice, {})
+        for k in self._TUNING_KEYS:
+            if isinstance(override.get(k), (int, float)):
+                base[k] = float(override[k])
+        return base
+
+    def set_tuning(self, voice: str, values: dict) -> dict:
+        """Persist per-voice tuning overrides (only the recognized keys). Passing an
+        empty dict clears the voice back to the config defaults. Returns the new
+        effective tuning. Clears the cache so the change is audible immediately."""
+        _validate_voice_name(voice)
+        clean = {k: float(values[k]) for k in self._TUNING_KEYS
+                 if isinstance(values.get(k), (int, float))}
+        if clean:
+            self._tuning[voice] = clean
+        else:
+            self._tuning.pop(voice, None)
+        self._save_tuning()
+        self._cache.clear()  # cached audio used the old tuning
+        log.info("tuning set for %s: %s", voice, clean or "(reset to defaults)")
+        return self.tuning_for(voice)
 
     # -- readiness --------------------------------------------------------
     def _engine_ready(self, engine: str) -> bool:
@@ -281,7 +333,11 @@ class TTSHandler:
         if not self._cfg.enabled or not text.strip():
             return None
         engine = self._engine_for(route)
-        key = (engine, self._voice, text.strip())
+        # Tuning is part of the identity of the audio: a re-tune must not return a
+        # stale cached clip. (set_tuning also clears the cache; this guards repeats
+        # that span an env/default change too.)
+        tuning_sig = tuple(sorted(self.tuning_for().items())) if engine == "piper" else ()
+        key = (engine, self._voice, text.strip(), tuning_sig)
         cached = self._cache.get(key)
         if cached is not None:
             self._cache.move_to_end(key)  # LRU touch
@@ -304,10 +360,15 @@ class TTSHandler:
                 r = await client.post(f"{self._chatterbox_url}/synthesize", json={"text": text})
                 r.raise_for_status()
                 return r.content or None  # host service returns a full WAV at its own rate
+        t = self.tuning_for()
         proc = await asyncio.create_subprocess_exec(
             *shlex.split(self._cfg.piper_bin),
             "--model", str(self._model_path()),
             "--output-raw",
+            "--length-scale", str(t["length_scale"]),
+            "--noise-scale", str(t["noise_scale"]),
+            "--noise-w-scale", str(t["noise_w_scale"]),
+            "--sentence-silence", str(t["sentence_silence"]),
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,

@@ -10,8 +10,8 @@ from __future__ import annotations
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (QFileDialog, QFrame, QHBoxLayout, QInputDialog,
-                             QLabel, QMessageBox, QPushButton, QVBoxLayout,
-                             QWidget)
+                             QLabel, QMessageBox, QPushButton, QSlider,
+                             QVBoxLayout, QWidget)
 
 from .theme import Theme
 from .widgets import AsyncCall, RowsCard, section_label
@@ -98,6 +98,40 @@ class VoicePage(QWidget):
         cl.addWidget(self.export_btn)
         outer.addWidget(self.current_card)
 
+        # ---- Delivery (Piper naturalness tuning for the active voice) ----
+        outer.addWidget(section_label("Delivery"))
+        self.tuning_card = RowsCard()
+        self._sliders: dict[str, tuple] = {}
+        # (key, label, lo, hi as ints x100, left hint, right hint)
+        specs = [
+            ("length_scale", "Pace", 50, 200, "Faster", "Slower & calmer"),
+            ("noise_scale", "Expressiveness", 0, 150, "Flat", "More varied"),
+            ("noise_w_scale", "Cadence variation", 0, 200, "Robotic", "Human"),
+            ("sentence_silence", "Pause between sentences", 0, 150, "None", "Longer"),
+        ]
+        for key, label, lo, hi, lh, rh in specs:
+            self.tuning_card.add_row(self._slider_row(key, label, lo, hi, lh, rh))
+        btns = QWidget()
+        bl = QHBoxLayout(btns)
+        bl.setContentsMargins(14, 11, 14, 11)
+        bl.setSpacing(8)
+        prev = QPushButton("▶ Preview delivery")
+        prev.setObjectName("accentSoft")
+        prev.clicked.connect(self._preview)
+        bl.addWidget(prev)
+        bl.addStretch(1)
+        reset = QPushButton("Reset to default")
+        reset.setObjectName("ghost")
+        reset.clicked.connect(self._reset_tuning)
+        bl.addWidget(reset)
+        self.tuning_card.add_row(btns)
+        outer.addWidget(self.tuning_card)
+        thint = QLabel("Shapes how human (vs robotic) the active voice sounds — no "
+                       "retraining. Saved per voice; applies on the next reply.")
+        thint.setObjectName("hint")
+        thint.setWordWrap(True)
+        outer.addWidget(thint)
+
         outer.addWidget(section_label("Library"))
         self.library = RowsCard()
         outer.addWidget(self.library)
@@ -108,17 +142,97 @@ class VoicePage(QWidget):
         outer.addWidget(self.note)
         self._render()
 
+    # -- tuning (Piper naturalness) -----------------------------------------
+    def _slider_row(self, key: str, label: str, lo: int, hi: int,
+                    left: str, right: str) -> QWidget:
+        w = QWidget()
+        v = QVBoxLayout(w)
+        v.setContentsMargins(14, 11, 14, 11)
+        v.setSpacing(6)
+        top = QHBoxLayout()
+        lab = QLabel(label)
+        lab.setObjectName("rowSub")
+        val = QLabel("—")
+        val.setObjectName("rowSub")
+        top.addWidget(lab, 1)
+        top.addWidget(val)
+        v.addLayout(top)
+        sld = QSlider(Qt.Orientation.Horizontal)
+        sld.setRange(lo, hi)
+        sld.valueChanged.connect(lambda x: val.setText(f"{x / 100:.2f}"))
+        sld.sliderReleased.connect(lambda k=key: self._apply_tuning(k))
+        v.addWidget(sld)
+        hints = QHBoxLayout()
+        lh = QLabel(left)
+        lh.setObjectName("hint")
+        rh = QLabel(right)
+        rh.setObjectName("hint")
+        hints.addWidget(lh)
+        hints.addStretch(1)
+        hints.addWidget(rh)
+        v.addLayout(hints)
+        self._sliders[key] = (sld, val)
+        return w
+
+    def _load_tuning(self) -> None:
+        """Pull the active voice's effective tuning and set the sliders (no write)."""
+        if not self._active:
+            return
+        call = AsyncCall(self, self.api.get_tuning, self._active)
+        call.done.connect(self._tuning_loaded)
+        call.start()
+
+    def _tuning_loaded(self, ok: bool, res) -> None:
+        if not ok or not isinstance(res, dict):
+            return
+        t = res.get("tuning", {})
+        self._suppress = True  # setValue would otherwise look like a user edit
+        for key, (sld, val) in self._sliders.items():
+            x = t.get(key)
+            if isinstance(x, (int, float)):
+                sld.setValue(int(round(x * 100)))
+                val.setText(f"{x:.2f}")
+        self._suppress = False
+
+    def _apply_tuning(self, _key: str) -> None:
+        if getattr(self, "_suppress", False) or not self._active:
+            return
+        values = {k: sld.value() / 100 for k, (sld, _v) in self._sliders.items()}
+        call = AsyncCall(self, self.api.set_tuning, values, self._active)
+        call.done.connect(lambda ok, res: self.window().toast(
+            "Delivery updated" if ok else f"Tuning failed: {res}"))
+        call.start()
+
+    def _reset_tuning(self) -> None:
+        if not self._active:
+            return
+        call = AsyncCall(self, self.api.set_tuning, {}, self._active)
+        call.done.connect(self._reset_done)
+        call.start()
+
+    def _reset_done(self, ok: bool, res) -> None:
+        if ok:
+            self.window().toast("Delivery reset to default")
+            self._load_tuning()
+        else:
+            self.window().toast(f"Reset failed: {res}")
+
     # -- data ---------------------------------------------------------------
     def set_voices(self, active: str, available: list[str]) -> None:
+        changed = active != self._active
         self._active = active
         self._available = available
         self._render()
+        if changed or not getattr(self, "_tuning_ready", False):
+            self._tuning_ready = True
+            self._load_tuning()
 
     def set_engine(self, engine: str) -> None:
         """Grey the Piper catalog out when another TTS engine is active."""
         is_piper = "piper" in (engine or "")
         self.setEnabled(True)
-        for w in (self.current_card, self.library, self.preview_btn, self.export_btn):
+        for w in (self.current_card, self.library, self.preview_btn, self.export_btn,
+                  self.tuning_card):  # tuning is Piper-only (CLI flags)
             w.setEnabled(is_piper)
         self.note.setText(
             "Voices are free Piper models and run entirely on this PC. Each carries "
@@ -211,12 +325,16 @@ class VoicePage(QWidget):
             fake_btn = QPushButton()
             self._download(name.strip(), fake_btn)
 
+    # Multi-sentence so the pace, cadence, and inter-sentence pause tuning are all
+    # audible in one preview. route="ack" hits the command voice path.
+    _PREVIEW_LINE = ("Shields at maximum. Quantum drive is spooling, Commander. "
+                     "I'd recommend we leave before our friends arrive.")
+
     def _preview(self) -> None:
         if self._busy is not None or not self._active:
             return
         self.preview_btn.setText("…")
-        self._busy = AsyncCall(self, self.sender.speak,
-                               f"STELLA online. This is the {self._active} voice.")
+        self._busy = AsyncCall(self, self.sender.speak, self._PREVIEW_LINE, "ack")
         self._busy.done.connect(self._previewed)
         self._busy.start()
 

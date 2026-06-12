@@ -27,6 +27,19 @@ class TTSConfig:
     # TTS engine command (piper1-gpl, the engine voices are trained/exported with).
     # shlex-split, so a multi-token command like "python3 -m piper" works.
     piper_bin: str = "python3 -m piper"
+    # Piper synthesis tuning - the biggest lever on how natural (vs robotic) any
+    # voice sounds, with NO retraining. Defaults below lean slightly calmer and
+    # less metronomic than Piper's stock (1.0 / 0.667 / 0.8), which reads as more
+    # human and "in control" for a ship-assistant delivery. Per-voice overrides
+    # live in config/tts_tuning.json (managed by the GUI); these are the fallback.
+    #   length_scale    : phoneme duration. >1 slower/calmer, <1 faster/clipped.
+    #   noise_scale     : voice expressiveness/variation.
+    #   noise_w_scale   : phoneme-timing variation (cadence; higher = less robotic).
+    #   sentence_silence: seconds of pause between sentences.
+    length_scale: float = 1.06
+    noise_scale: float = 0.62
+    noise_w_scale: float = 0.85
+    sentence_silence: float = 0.25
 
 
 @dataclass(frozen=True)
@@ -67,6 +80,10 @@ def load_config(settings_path: Path | None = None) -> ServerConfig:
         sample_rate=int(tts.get("sample_rate", tts_defaults.sample_rate)),
         voices_dir=Path(_env("STELLA_VOICES_DIR", str(tts_defaults.voices_dir))),
         piper_bin=_env("STELLA_PIPER_BIN", tts_defaults.piper_bin),
+        length_scale=float(tts.get("length_scale", tts_defaults.length_scale)),
+        noise_scale=float(tts.get("noise_scale", tts_defaults.noise_scale)),
+        noise_w_scale=float(tts.get("noise_w_scale", tts_defaults.noise_w_scale)),
+        sentence_silence=float(tts.get("sentence_silence", tts_defaults.sentence_silence)),
     )
 
     clf = data.get("classifier", {})

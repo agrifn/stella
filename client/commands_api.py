@@ -53,6 +53,22 @@ class CommandsAPI:
             raise RuntimeError(self._detail(r))
         return r.json()
 
+    def get_tuning(self, voice: str | None = None) -> dict:
+        """Effective Piper synthesis tuning for a voice (active voice if None)."""
+        params = {"voice": voice} if voice else None
+        r = self._s.get(f"{self._url}/voices/tuning", params=params, timeout=self._timeout)
+        r.raise_for_status()
+        return r.json()
+
+    def set_tuning(self, values: dict, voice: str | None = None) -> dict:
+        """Update per-voice tuning (partial); empty dict resets to defaults."""
+        params = {"voice": voice} if voice else None
+        r = self._s.put(f"{self._url}/voices/tuning", params=params, json=values,
+                        timeout=self._timeout)
+        if r.status_code >= 400:
+            raise RuntimeError(self._detail(r))
+        return r.json()
+
     def export_voice(self, name: str, dest_zip: str) -> None:
         """Download a voice as a shareable .zip bundle, saved to dest_zip."""
         r = self._s.get(f"{self._url}/voices/{name}/bundle", timeout=180)
