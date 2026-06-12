@@ -144,8 +144,14 @@ class RowsCard(QFrame):
     def clear(self) -> None:
         while self._lay.count():
             item = self._lay.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+            w = item.widget()
+            if w:
+                # setParent(None) removes it from the visible tree NOW; deleteLater
+                # alone only schedules deletion, leaving the old row painted at its
+                # last geometry until the event loop runs - which overlaps the fresh
+                # rows on a rebuild (the "rows stacked on top of each other" bug).
+                w.setParent(None)
+                w.deleteLater()
         self._count = 0
 
 

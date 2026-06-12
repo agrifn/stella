@@ -418,8 +418,10 @@ class _Editor(QFrame):
     def _render_phrases(self) -> None:
         while self.phrase_lay.count():
             item = self.phrase_lay.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+            w = item.widget()
+            if w:
+                w.setParent(None)  # remove from view now (see RowsCard.clear)
+                w.deleteLater()
         row: QHBoxLayout | None = None
         width = 0
         for i, p in enumerate(self._phrases):
@@ -559,8 +561,10 @@ class CommandsPage(QWidget):
     def _render(self, *_a) -> None:
         while self.list_lay.count():
             item = self.list_lay.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+            w = item.widget()
+            if w:
+                w.setParent(None)  # remove from view now (see RowsCard.clear)
+                w.deleteLater()
         self._rows = {}
         q = self.search.text().strip().lower()
         cmds = self._commands

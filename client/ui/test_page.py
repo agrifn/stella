@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QLineEdit, QPushButton,
-                             QVBoxLayout, QWidget)
+                             QScrollArea, QVBoxLayout, QWidget)
 
 from .theme import Theme
 from .widgets import AsyncCall, RowsCard, key_chip, section_label
@@ -33,7 +33,14 @@ class TestPage(QWidget):
         self._history: list[dict] = []
         self._call: AsyncCall | None = None
 
-        outer = QVBoxLayout(self)
+        shell = QVBoxLayout(self)
+        shell.setContentsMargins(0, 0, 0, 0)
+        _scroll = QScrollArea()
+        _scroll.setWidgetResizable(True)
+        shell.addWidget(_scroll)
+        _content = QWidget()
+        _scroll.setWidget(_content)
+        outer = QVBoxLayout(_content)
         outer.setContentsMargins(30, 26, 30, 26)
         outer.setSpacing(16)
         outer.setAlignment(Qt.AlignmentFlag.AlignTop)

@@ -14,8 +14,8 @@ from pathlib import Path
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (QFrame, QGridLayout, QHBoxLayout, QLabel,
-                             QMessageBox, QPushButton, QSlider, QVBoxLayout,
-                             QWidget)
+                             QMessageBox, QPushButton, QScrollArea, QSlider,
+                             QVBoxLayout, QWidget)
 
 from .theme import Theme
 from .widgets import RowsCard, Segmented, Switch, setting_row
@@ -39,7 +39,14 @@ class OverlayPage(QWidget):
         self._corner = c.get("overlay_corner", "bottom-right")
         self._state = "command"
 
-        outer = QVBoxLayout(self)
+        shell = QVBoxLayout(self)
+        shell.setContentsMargins(0, 0, 0, 0)
+        _scroll = QScrollArea()
+        _scroll.setWidgetResizable(True)
+        shell.addWidget(_scroll)
+        _content = QWidget()
+        _scroll.setWidget(_content)
+        outer = QVBoxLayout(_content)
         outer.setContentsMargins(30, 26, 30, 26)
         outer.setSpacing(16)
         outer.setAlignment(Qt.AlignmentFlag.AlignTop)
