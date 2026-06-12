@@ -37,9 +37,11 @@ class ClientConfig:
     min_speech_rms: float = 0.0012
     # Hands-free (wake-word) capture endpointing: once speech is heard, stop after this
     # much trailing silence; give up if no speech within the grace window; hard cap at
-    # max. Tighter silence = snappier voice commands (less dead air). The capture's
-    # speech-detect gate reuses min_speech_rms (one "what counts as speech" value).
-    wake_capture_silence: float = 0.45
+    # max. Tighter silence = snappier voice commands (less dead air), but too low clips
+    # slow or deliberate speakers mid-command - if commands get cut off, go back to the
+    # conservative 0.45. The capture's speech-detect gate reuses min_speech_rms (one
+    # "what counts as speech" value).
+    wake_capture_silence: float = 0.32
     wake_capture_grace: float = 2.5
     wake_capture_max: float = 6.0
     # STT confidence gates (faster-whisper): drop segments noisier / less confident
