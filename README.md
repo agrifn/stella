@@ -3,7 +3,7 @@
 STELLA is a local, voice-controlled AI ship assistant for Star Citizen. You hold a
 push-to-talk key (or say the wake word) and speak; STELLA transcribes it, classifies the
 intent locally, presses the matching ship keybind in-game, and speaks a short
-confirmation - in about a second.
+confirmation - typically well under a second from the end of speech.
 
 Everything runs on the gaming PC. There is no LLM and no cloud in the loop: intent is
 decided by a tiny local embedding classifier, so nothing you say leaves your machine.
@@ -38,7 +38,8 @@ ONE machine (Windows + WSL2, NVIDIA GPU)
 
 ## How intent recognition works
 
-No LLM. Three layers, cheapest first, rebuilt from `keybinds.json` on every edit:
+No LLM. Three layers, cheapest first, running in the client process and rebuilt from
+`keybinds.json` on every edit (GUI or by hand - changes are picked up live):
 
 1. **Deterministic power slot-rule** - a closed-vocabulary rule maps pool
    (weapons / engines / shields) x direction (max / min / up one / down one / toggle)
@@ -55,8 +56,12 @@ It runs in well under a millisecond on the CPU.
 
 ## Features
 
-- **Speech to intent, fully local:** faster-whisper (`large-v3-turbo`) -> local
-  embedding classifier. No cloud, no LLM, no API keys.
+- **Speech to intent, fully local:** faster-whisper (`large-v3-turbo`, greedy decode
+  tuned for the closed command vocabulary) -> in-process embedding classifier. No
+  cloud, no LLM, no API keys.
+- **Speculative STT:** you hold PTT a beat past your last word anyway - STELLA starts
+  transcribing the moment you stop talking, so the text is ready at key release. If
+  you speak again before releasing, the early result is safely discarded.
 - **Push-to-talk or hands-free:** hold Right Ctrl, or say the wake word **"Stella"**.
 - **Registry-resolved keybinds:** the classifier only picks an intent; the command
   registry (`config/keybinds.json`) maps it to a key and owns the `confirm_required`
@@ -121,7 +126,9 @@ CHAT/COMMAND. Run Star Citizen in borderless/windowed so the overlay shows.
 - `config/keybinds.json` - the command set (intent -> key, hold, confirm, example
   phrases, and a canned spoken ack). Curated for SC Alpha 4.0. Edit by hand or via the GUI.
 - `config/settings.json` - PTT key, wake word, mode toggle, Whisper model, audio device,
-  overlay position, classifier thresholds, n-best / follow-up toggles, server URL.
+  overlay position, classifier thresholds, n-best / follow-up toggles, server URL, and
+  the latency flags (`stt_beam_size`, `local_intent`, `speculative_stt`,
+  `spec_silence_s`, `wake_capture_silence` - see [docs/latency.md](docs/latency.md)).
 - `.env` - all optional (see `.env.example`): classifier model override, TTS engine, and
   an optional API token. No LLM keys; never commit it.
 
@@ -131,13 +138,14 @@ CHAT/COMMAND. Run Star Citizen in borderless/windowed so the overlay shows.
 server/   FastAPI app (main, config, models, command_registry, intent_classifier,
           tts_handler), Dockerfile, entrypoint.sh
 client/   engine (shared voice loop), app (overlay), overlay, audio_capture (PTT +
-          hands-free), wake_word, stt_handler, mode_switch, multicmd, confirm,
-          keybind_executor, chat_injector, command_sender, audio_player,
+          hands-free), endpointing (speculative STT decisions), wake_word,
+          stt_handler, local_intent (in-process classifier), mode_switch, multicmd,
+          confirm, keybind_executor, chat_injector, command_sender, audio_player,
           command_manager + commands_api (GUI), cuda_paths, config
 config/   keybinds.json, settings.json
 tools/    offline eval scripts (classifier_eval, slot_eval, combined_eval, add_acks)
 tests/    pure-logic unit tests (no CUDA / PyQt / pydirectinput needed)
-docs/     setup.md
+docs/     setup.md, latency.md
 voice/    optional host-side Chatterbox clone service (off by default; bring your own voice)
 docker-compose.yml   start_stella.bat   start_manager.bat
 ```
