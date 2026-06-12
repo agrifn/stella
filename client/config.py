@@ -46,6 +46,10 @@ class ClientConfig:
     # than these so silence/noise never becomes a command.
     stt_no_speech_prob: float = 0.6
     stt_avg_logprob: float = -1.3
+    # Primary decode beam width. 1 = greedy: 2 to 3x faster and accurate enough for
+    # the small closed command vocabulary (n-best + the classifier reject threshold
+    # backstop the rare slip). Raise to 5 for Whisper's robust beam-search default.
+    stt_beam_size: int = 1
     # ASR n-best rescoring: when the top transcript is not already a confident command,
     # transcribe a couple of sampled alternates and let the server pick the most
     # confident command among them. Only runs on the uncertain path (no added latency
@@ -116,6 +120,7 @@ def load_client_config(settings_path: Path | None = None) -> ClientConfig:
         wake_capture_max=float(client.get("wake_capture_max", ClientConfig.wake_capture_max)),
         stt_no_speech_prob=float(client.get("stt_no_speech_prob", ClientConfig.stt_no_speech_prob)),
         stt_avg_logprob=float(client.get("stt_avg_logprob", ClientConfig.stt_avg_logprob)),
+        stt_beam_size=int(client.get("stt_beam_size", ClientConfig.stt_beam_size)),
         nbest_enabled=bool(client.get("nbest_enabled", ClientConfig.nbest_enabled)),
         nbest_count=int(client.get("nbest_count", ClientConfig.nbest_count)),
         follow_up_enabled=bool(client.get("follow_up_enabled", ClientConfig.follow_up_enabled)),

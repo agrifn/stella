@@ -48,7 +48,8 @@ class StellaEngine:
         do_exec = cfg.execute_keys if execute_keys is None else execute_keys
 
         self.stt = STTHandler(cfg.whisper_model, cfg.whisper_device, cfg.whisper_compute_type,
-                              no_speech_prob=cfg.stt_no_speech_prob, avg_logprob=cfg.stt_avg_logprob)
+                              no_speech_prob=cfg.stt_no_speech_prob, avg_logprob=cfg.stt_avg_logprob,
+                              beam_size=cfg.stt_beam_size)
         self.sender = CommandSender(cfg.server_url, cfg.api_token)
         self.player = AudioPlayer(cfg.output_device)
         self.executor = KeybindExecutor(hold_duration=cfg.hold_duration, enabled=do_exec)
