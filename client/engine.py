@@ -338,7 +338,12 @@ class StellaEngine:
           - ASR n-best rescoring: transcribe sampled alternates and let the resolver
             pick the most confident command among them.
           - "Say again?": a still-borderline match asks the pilot to repeat once,
-            rather than firing a guess."""
+            rather than firing a guess.
+
+        When `audio` is None (one part of a multi-command utterance) neither
+        recovery layer is available, so a borderline command part is SKIPPED with a
+        status event instead of fired - a wrong guess in the middle of a chain has
+        no recovery, and firing it would contradict the clarify gate above."""
         t1 = time.time()
         try:
             res = self._classify(text)
@@ -375,6 +380,16 @@ class StellaEngine:
                         self._emit("transcript", text=res.chosen_text)
             else:
                 log.info("n-best %.2fs: no distinct alternates", time.time() - t_nb)
+
+        # Borderline command on the multi-command path (no audio kept, so no n-best
+        # and no "Say again?" behind it): never fire the guess - skip the part and
+        # tell the pilot why. This closes the gap where a borderline part of "X and
+        # Y" executed without the clarify gate the single-command path enforces.
+        if audio is None and self._is_command(res) and res.clarify:
+            log.info("skip borderline multi-command part: %r (conf %.2f)",
+                     text, res.confidence)
+            self._emit("status", text=f"skipped borderline: {text}")
+            return False
 
         # Still a borderline command: ask once instead of guessing.
         if audio is not None and self._is_command(res) and res.clarify:

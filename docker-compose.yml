@@ -25,8 +25,11 @@ services:
       STELLA_TTS_CHAT_ENGINE: ${STELLA_TTS_CHAT_ENGINE:-piper}
       STELLA_TTS_ENGINE: ${STELLA_TTS_ENGINE:-piper}
       STELLA_CHATTERBOX_URL: ${STELLA_CHATTERBOX_URL:-http://host.docker.internal:8123}
+    # Loopback only: the API is unauthenticated by default and its CRUD rewrites
+    # keybinds executed by an elevated process - it must not be reachable from the
+    # LAN. The Windows client talks to 127.0.0.1 anyway (WSL2 forwards the port).
     ports:
-      - "8420:8420"
+      - "127.0.0.1:8420:8420"
     # Mount config so command edits (CRUD) persist on the host;
     # voices volume so added/selected voices survive rebuilds.
     volumes:
