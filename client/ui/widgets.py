@@ -7,7 +7,7 @@ geometry: 44x27 track, 23px knob, 2px inset.
 """
 from __future__ import annotations
 
-from PyQt6.QtCore import (QEasingCurve, QObject, QPropertyAnimation, QThread, Qt,
+from PyQt6.QtCore import (QEasingCurve, QObject, QPropertyAnimation, Qt,
                           pyqtProperty, pyqtSignal)
 from PyQt6.QtGui import QColor, QPainter
 from PyQt6.QtWidgets import (QAbstractButton, QFrame, QHBoxLayout, QLabel,
@@ -186,29 +186,26 @@ def key_chip(text: str) -> QLabel:
 
 
 class AsyncCall(QObject):
-    """Run a blocking callable on a QThread and deliver (ok, result_or_error) via
-    the done signal on the GUI thread. Every server request in the GUI goes
-    through this so a slow or down backend never freezes the window. Keep a
-    reference to the instance (it parents itself to `owner`) until done fires."""
+    """Run a blocking callable on a daemon thread and deliver
+    (ok, result_or_error) via the done signal on the GUI thread. Every server
+    request in the GUI goes through this so a slow or down backend never
+    freezes the window.
+
+    Deliberately a plain Python thread, not a QThread: the worker emits `done`
+    from its thread and Qt queues the delivery to the receivers' (GUI) thread,
+    which is all that is needed. A QThread parented into the widget tree gets
+    destroyed at shutdown while a slow request still runs, which fail-fasts
+    the whole process (0xC0000409); a daemon thread just dies with it."""
 
     done = pyqtSignal(bool, object)
 
     def __init__(self, owner: QObject, fn, *args, **kwargs):
-        # No QObject parent: a parented object cannot moveToThread (Qt rule), and
-        # without the move the 'background' call would block the GUI thread. The
-        # thread is parented to the owner instead and keeps the worker alive.
-        super().__init__()
+        super().__init__(owner)  # parented: cleaned up with its page/window
         self._fn, self._args, self._kwargs = fn, args, kwargs
-        self._thread = QThread(owner)
-        self._thread._keep_alive = self
-        self.moveToThread(self._thread)
-        self._thread.started.connect(self._run)
-        self.done.connect(self._thread.quit)
-        self._thread.finished.connect(self.deleteLater)
-        self._thread.finished.connect(self._thread.deleteLater)
 
     def start(self) -> "AsyncCall":
-        self._thread.start()
+        import threading
+        threading.Thread(target=self._run, daemon=True).start()
         return self
 
     def _run(self) -> None:
