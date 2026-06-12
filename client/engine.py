@@ -23,7 +23,7 @@ from .audio_capture import PTTRecorder
 from .audio_player import AudioPlayer
 from .chat_injector import ChatInjector
 from .command_sender import CommandSender
-from .config import ClientConfig
+from .config import CONFIG_DIR, ClientConfig
 from .confirm import is_affirmative
 from .keybind_executor import KeybindExecutor
 from .mode_switch import detect_mode_switch
@@ -51,6 +51,22 @@ class StellaEngine:
                               no_speech_prob=cfg.stt_no_speech_prob, avg_logprob=cfg.stt_avg_logprob,
                               beam_size=cfg.stt_beam_size)
         self.sender = CommandSender(cfg.server_url, cfg.api_token)
+        # In-process intent classification (no HTTP hop on the action path). The
+        # sender stays for /speak, health(), and as the fallback when this is off
+        # or failed to build (missing model2vec, unreadable keybinds, ...).
+        self._local = None
+        if cfg.local_intent:
+            try:
+                from .local_intent import LocalIntentResolver
+                self._local = LocalIntentResolver(
+                    keybinds_path=CONFIG_DIR / "keybinds.json",
+                    model_name=cfg.classifier_model,
+                    reject_threshold=cfg.classifier_reject,
+                    clarify_threshold=cfg.classifier_clarify,
+                )
+            except Exception as e:  # noqa: BLE001 - fall back to the server path
+                log.exception("local intent init failed; falling back to /command")
+                self._emit("status", text=f"local intent unavailable ({e}); using server")
         self.player = AudioPlayer(cfg.output_device)
         self.executor = KeybindExecutor(hold_duration=cfg.hold_duration, enabled=do_exec)
         self.chat = ChatInjector(cfg.chat_open_key, cfg.chat_send_key,
@@ -163,14 +179,28 @@ class StellaEngine:
     def warm(self):
         self._emit("status", text="warming speech model...")
         self.stt.warm()
-        try:
-            self._emit("status", text=f"server: {self.sender.health().get('status')}")
-            # Warm the server path (classifier + first request) so the first real
-            # command isn't a cold round-trip.
+        if self._local is not None:
+            # Intent is in-process: warm it with a dummy classify (first encode pays
+            # the model load). The server only does TTS now, so being unreachable is
+            # informational - commands still fire, acks are just silent.
             self._emit("status", text="warming classifier...")
-            self.sender.send("ready", speak=False)
-        except Exception as e:  # noqa: BLE001
-            self._emit("status", text=f"server unreachable: {e}")
+            try:
+                self._local.resolve("ready")
+            except Exception:  # noqa: BLE001
+                log.exception("classifier warm-up failed")
+            try:
+                self._emit("status", text=f"TTS server: {self.sender.health().get('status')}")
+            except Exception:  # noqa: BLE001
+                self._emit("status", text="TTS server offline (acks will be silent)")
+        else:
+            try:
+                self._emit("status", text=f"server: {self.sender.health().get('status')}")
+                # Warm the server path (classifier + first request) so the first real
+                # command isn't a cold round-trip.
+                self._emit("status", text="warming classifier...")
+                self.sender.send("ready", speak=False)
+            except Exception as e:  # noqa: BLE001
+                self._emit("status", text=f"server unreachable: {e}")
         # Warn if we'll try to send keys but aren't elevated (EAC/SC run elevated,
         # so a non-admin process can't inject input into them).
         if self.executor.enabled and not is_admin():
@@ -243,27 +273,35 @@ class StellaEngine:
 
     @staticmethod
     def _is_command(res) -> bool:
-        """True if the server resolved an actionable keybind/macro (not a chat reply)."""
+        """True if the resolver produced an actionable keybind/macro (not a chat reply)."""
         return bool(res and (res.keybind or res.sequence))
+
+    def _classify(self, text: str, candidates: list[str] | None = None):
+        """Resolve text -> CommandResult, in-process when local intent is on,
+        otherwise via the server's /command. Both return the same dataclass with
+        identical semantics, so callers never care which path ran."""
+        if self._local is not None:
+            return self._local.resolve(text, candidates)
+        return self.sender.send(text, speak=False, candidates=candidates)
 
     def _handle_segment(self, text: str, count: int, t_stt: float, dur: float,
                         audio=None) -> bool:
         """Classify and act on one sub-command, repeating a normal command `count`
-        times. Request intent ONLY (speak=False) so TTS synthesis does not sit in the
-        action path; we voice the reply separately, after acting. Returns True if a
-        real command actually executed (used to arm follow-up mode).
+        times. Intent only - TTS synthesis never sits in the action path; we voice
+        the reply separately, after acting. Returns True if a real command actually
+        executed (used to arm follow-up mode).
 
         When `audio` is provided (single, whole-utterance command), two recovery layers
         kick in if the first transcript is not already a confident command:
-          - ASR n-best rescoring: transcribe sampled alternates and let the server pick
-            the most confident command among them.
+          - ASR n-best rescoring: transcribe sampled alternates and let the resolver
+            pick the most confident command among them.
           - "Say again?": a still-borderline match asks the pilot to repeat once,
             rather than firing a guess."""
         t1 = time.time()
         try:
-            res = self.sender.send(text, speak=False)
+            res = self._classify(text)
         except Exception as e:  # noqa: BLE001
-            self._emit("error", text=f"server error: {e}")
+            self._emit("error", text=f"intent error: {e}")
             return False
         t_srv = time.time() - t1
         log.info("classify %.2fs -> intent=%s (%.2f) key=%s clarify=%s x%d",
@@ -279,7 +317,7 @@ class StellaEngine:
                     if c and c.lower() != text.lower()]
             if alts:
                 try:
-                    res2 = self.sender.send(text, speak=False, candidates=alts)
+                    res2 = self._classify(text, candidates=alts)
                 except Exception as e:  # noqa: BLE001
                     res2 = None
                     log.warning("n-best rescoring failed: %s", e)
@@ -366,9 +404,9 @@ class StellaEngine:
         # again here - that bounds one stubborn command to a single recovery round
         # (n-best -> say-again -> single re-classify) instead of stacking STT passes.
         try:
-            res = self.sender.send(text, speak=False)
+            res = self._classify(text)
         except Exception as e:  # noqa: BLE001
-            self._emit("error", text=f"server error: {e}")
+            self._emit("error", text=f"intent error: {e}")
             return None
         if self._is_command(res) and not res.clarify:
             return res

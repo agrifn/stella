@@ -16,20 +16,25 @@ ONE machine (Windows + WSL2, NVIDIA GPU)
   Native Windows client                     Docker backend (WSL2, "stella-stack")
   --------------------                      -------------------------------------
   faster-whisper STT (CUDA)                   stella-api   (single container)
-  push-to-talk + "Stella" wake word   HTTP      FastAPI
-  PyQt6 overlay HUD                127.0.0.1:8420  embedding intent classifier (CPU)
-  pydirectinput keybinds   <-------------->       Piper TTS
-  CHAT-mode text injection                        /command /speak /commands /voices /health
+  embedding intent classifier (CPU)   HTTP      FastAPI
+  push-to-talk + "Stella" wake word 127.0.0.1:8420  Piper TTS
+  PyQt6 overlay HUD        <-------------->       command management (CRUD)
+  pydirectinput keybinds                          /command /speak /commands /voices /health
+  CHAT-mode text injection
   audio playback
 ```
 
 - The client is **native Windows** (it needs the mic, global hotkeys, keystroke
   injection into the game, audio out, and an overlay - none of which work from a
   container).
-- The backend is a **single Docker container** in WSL2: FastAPI + a local
-  static-embedding intent classifier (model2vec `potion-32M`, CPU/numpy) + Piper TTS.
-  No LLM, no Ollama; the backend does not need the GPU.
-- They talk over `127.0.0.1:8420` (WSL2 forwards the port to Windows).
+- **Intent is decided in-client**: the static-embedding classifier (model2vec
+  `potion-32M`, CPU/numpy) runs in the client process, so classification adds no
+  network hop to the action path. The backend is a **single Docker container** in
+  WSL2 serving Piper TTS and command management; its `/command` endpoint remains as
+  a fallback (set `local_intent: false` in settings.json to use it). No LLM, no
+  Ollama; the backend does not need the GPU.
+- They talk over `127.0.0.1:8420` (WSL2 forwards the port to Windows) for TTS and
+  command edits.
 
 ## How intent recognition works
 
@@ -53,9 +58,10 @@ It runs in well under a millisecond on the CPU.
 - **Speech to intent, fully local:** faster-whisper (`large-v3-turbo`) -> local
   embedding classifier. No cloud, no LLM, no API keys.
 - **Push-to-talk or hands-free:** hold Right Ctrl, or say the wake word **"Stella"**.
-- **Server-resolved keybinds:** the classifier only picks an intent; the server maps it
-  to a key via `config/keybinds.json` and owns the `confirm_required` safety flag, so the
-  recognizer can never invent a keybind.
+- **Registry-resolved keybinds:** the classifier only picks an intent; the command
+  registry (`config/keybinds.json`) maps it to a key and owns the `confirm_required`
+  safety flag, so the recognizer can never invent a keybind. Hand edits to the file
+  are picked up live (the classifier rebuilds on change).
 - **Keystroke execution:** pydirectinput (SendInput scancodes - the VoiceAttack-style
   approach that works under EAC). Combos, left/right modifiers, double-taps, held keys.
 - **Multi-command & repeat:** "lower shields and raise engine power", "fire three
@@ -78,8 +84,10 @@ It runs in well under a millisecond on the CPU.
   it ships with `en_GB-jenny_dioco-medium`. (An optional host-side Chatterbox clone
   service still lives under [voice/](voice/) but is off by default.)
 
-Measured: ~1.0s from end of speech to in-game action (STT ~0.3s + intent well under a
-millisecond); the spoken reply follows in the background so it never delays the action.
+Latency: intent classification runs in-process (no network hop) and takes well under a
+millisecond; STT dominates the action path and the spoken reply follows in the
+background so it never delays the action. See [docs/latency.md](docs/latency.md) for
+the tuning flags (greedy decode, speculative STT, endpointing).
 
 ## Quick start
 

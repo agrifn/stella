@@ -50,6 +50,15 @@ class ClientConfig:
     # the small closed command vocabulary (n-best + the classifier reject threshold
     # backstop the rare slip). Raise to 5 for Whisper's robust beam-search default.
     stt_beam_size: int = 1
+    # In-process intent classification: classify in the client (no HTTP hop on the
+    # action path). False = classic behavior, POST /command to the server. The
+    # classifier model/thresholds below mirror the server defaults and are read from
+    # the shared top-level "classifier" section of settings.json, so tuning one place
+    # changes both paths identically.
+    local_intent: bool = True
+    classifier_model: str = "minishlab/potion-base-32M"
+    classifier_reject: float = 0.45    # below this cosine -> chat (not a command)
+    classifier_clarify: float = 0.55   # command below this -> ask "Say again?"
     # ASR n-best rescoring: when the top transcript is not already a confident command,
     # transcribe a couple of sampled alternates and let the server pick the most
     # confident command among them. Only runs on the uncertain path (no added latency
@@ -102,6 +111,9 @@ def load_client_config(settings_path: Path | None = None) -> ClientConfig:
         data = json.loads(settings_path.read_text(encoding="utf-8"))
 
     client = data.get("client", {})
+    # The "classifier" section is shared with the server (same keys), so the local
+    # and HTTP intent paths always run the same model and thresholds.
+    clf = data.get("classifier", {})
     return ClientConfig(
         server_url=data.get("server_url", ClientConfig.server_url),
         ptt_key=client.get("ptt_key", ClientConfig.ptt_key),
@@ -121,6 +133,10 @@ def load_client_config(settings_path: Path | None = None) -> ClientConfig:
         stt_no_speech_prob=float(client.get("stt_no_speech_prob", ClientConfig.stt_no_speech_prob)),
         stt_avg_logprob=float(client.get("stt_avg_logprob", ClientConfig.stt_avg_logprob)),
         stt_beam_size=int(client.get("stt_beam_size", ClientConfig.stt_beam_size)),
+        local_intent=bool(client.get("local_intent", ClientConfig.local_intent)),
+        classifier_model=clf.get("model", ClientConfig.classifier_model),
+        classifier_reject=float(clf.get("reject_threshold", ClientConfig.classifier_reject)),
+        classifier_clarify=float(clf.get("clarify_threshold", ClientConfig.classifier_clarify)),
         nbest_enabled=bool(client.get("nbest_enabled", ClientConfig.nbest_enabled)),
         nbest_count=int(client.get("nbest_count", ClientConfig.nbest_count)),
         follow_up_enabled=bool(client.get("follow_up_enabled", ClientConfig.follow_up_enabled)),

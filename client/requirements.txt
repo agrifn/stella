@@ -5,6 +5,10 @@ numpy>=2.0
 keyboard>=0.13
 requests>=2.32
 
+# In-process intent classification (local_intent=true): the same static-embedding
+# classifier the server uses, run client-side so no HTTP hop sits in the action path.
+model2vec>=0.3
+
 # CUDA runtime libs for faster-whisper / CTranslate2 on NVIDIA GPUs (Windows).
 # These ship cublas64_12.dll and cudnn64_9.dll; client/cuda_paths.py adds their
 # bin dirs to PATH at startup. Omit on a CPU-only machine.
