@@ -15,6 +15,7 @@ beam-search behavior back.
 from __future__ import annotations
 
 import logging
+import threading
 
 import numpy as np
 
@@ -41,6 +42,11 @@ class STTHandler:
         self._max_no_speech = no_speech_prob   # drop segments noisier than this
         self._min_logprob = avg_logprob        # drop segments less confident than this
         self._beam_size = max(1, int(beam_size))  # 1 = greedy (see module docstring)
+        # Serialize ALL decode entry points: speculative STT transcribes from a
+        # background thread while PTT is still held, and WhisperModel inference must
+        # not run concurrently with itself. The lock covers segment consumption too,
+        # because faster-whisper decodes lazily while the generator is iterated.
+        self._decode_lock = threading.Lock()
         self.samplerate = 16000  # Whisper operates at 16 kHz
         try:
             self._model = WhisperModel(model_size, device=device, compute_type=compute_type)
@@ -82,13 +88,14 @@ class STTHandler:
         if audio is None or len(audio) == 0:
             return ""
         audio = np.asarray(audio, dtype=np.float32).reshape(-1)
-        segments, _info = self._model.transcribe(
-            audio, vad_filter=True, language="en",
-            beam_size=self._beam_size,
-            condition_on_previous_text=False,
-            without_timestamps=True,
-        )
-        return self._filter(segments)
+        with self._decode_lock:
+            segments, _info = self._model.transcribe(
+                audio, vad_filter=True, language="en",
+                beam_size=self._beam_size,
+                condition_on_previous_text=False,
+                without_timestamps=True,
+            )
+            return self._filter(segments)
 
     def transcribe_nbest(self, audio: np.ndarray, n: int = 3) -> list[str]:
         """Return up to `n` DISTINCT candidate transcripts, best first, for n-best
@@ -112,12 +119,13 @@ class STTHandler:
             if len(cands) >= n:
                 break
             try:
-                segments, _info = self._model.transcribe(
-                    audio, vad_filter=True, language="en",
-                    temperature=temp, beam_size=1, best_of=max(2, n),
-                    condition_on_previous_text=False,
-                    without_timestamps=True)
-                add(self._filter(segments))
+                with self._decode_lock:
+                    segments, _info = self._model.transcribe(
+                        audio, vad_filter=True, language="en",
+                        temperature=temp, beam_size=1, best_of=max(2, n),
+                        condition_on_previous_text=False,
+                        without_timestamps=True)
+                    add(self._filter(segments))
             except Exception:  # noqa: BLE001 - an alternate failing must not kill the path
                 log.exception("n-best sampled decode failed (temp=%.1f)", temp)
         return cands[:n]

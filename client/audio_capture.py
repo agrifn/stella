@@ -15,6 +15,8 @@ import keyboard
 import numpy as np
 import sounddevice as sd
 
+from .endpointing import trailing_silence_s
+
 log = logging.getLogger("stella.audio")
 
 
@@ -102,17 +104,41 @@ class PTTRecorder:
     def ptt_pressed(self) -> bool:
         return keyboard.is_pressed(self.ptt_key)
 
-    def capture_ptt(self, on_start=None, on_stop=None) -> np.ndarray:
+    def capture_ptt(self, on_start=None, on_stop=None, on_silence=None,
+                    spec_silence_s: float = 0.35, min_speech_s: float = 0.0,
+                    rms_gate: float = 0.0) -> np.ndarray:
         """Record while PTT is held (assumes it's already down). Returns the audio.
         Same capture as record_once but without the initial wait-for-press, so the
-        engine loop can poll for either PTT or the wake word and act on whichever."""
+        engine loop can poll for either PTT or the wake word and act on whichever.
+
+        on_silence (optional) fires AT MOST ONCE per hold, with a copy of the
+        buffer so far, when the pilot has stopped talking but still holds the key:
+        the buffer ends in >= spec_silence_s of trailing silence and the spoken
+        part is at least min_speech_s long. The engine uses it to start a
+        speculative transcription early; whether that snapshot is still valid at
+        release is the engine's call (speculation_valid), so speech resuming after
+        the snapshot needs no extra state here. Needs rms_gate > 0 to detect
+        silence (a disabled loudness gate also disables speculation)."""
         self.open()
         self._frames = []
         self._recording.set()
         if on_start:
             on_start()
+        fired = False
         while keyboard.is_pressed(self.ptt_key):
             sd.sleep(20)
+            if on_silence is None or fired or not self._frames:
+                continue
+            # Snapshot the frame list (the audio callback appends concurrently).
+            snap = np.concatenate(list(self._frames), axis=0).reshape(-1)
+            dur = len(snap) / self.samplerate
+            trail = trailing_silence_s(snap, self.samplerate, rms_gate)
+            if trail >= spec_silence_s and (dur - trail) >= max(min_speech_s, 1e-9):
+                fired = True
+                try:
+                    on_silence(snap)
+                except Exception:  # noqa: BLE001 - speculation must not break capture
+                    log.exception("on_silence callback failed")
         self._recording.clear()
         if on_stop:
             on_stop()

@@ -52,6 +52,14 @@ class ClientConfig:
     # the small closed command vocabulary (n-best + the classifier reject threshold
     # backstop the rare slip). Raise to 5 for Whisper's robust beam-search default.
     stt_beam_size: int = 1
+    # Speculative STT during the PTT hold: pilots hold the key 200 to 400ms past
+    # their last word. Once spec_silence_s of trailing silence accumulates in the
+    # live buffer, transcription starts in the background so the text is ready at
+    # release; anything spoken after that snapshot discards it (see
+    # client/endpointing.py). False = byte-identical to the classic flow. Needs
+    # min_speech_rms > 0 (silence detection reuses the loudness gate).
+    speculative_stt: bool = True
+    spec_silence_s: float = 0.35
     # In-process intent classification: classify in the client (no HTTP hop on the
     # action path). False = classic behavior, POST /command to the server. The
     # classifier model/thresholds below mirror the server defaults and are read from
@@ -135,6 +143,8 @@ def load_client_config(settings_path: Path | None = None) -> ClientConfig:
         stt_no_speech_prob=float(client.get("stt_no_speech_prob", ClientConfig.stt_no_speech_prob)),
         stt_avg_logprob=float(client.get("stt_avg_logprob", ClientConfig.stt_avg_logprob)),
         stt_beam_size=int(client.get("stt_beam_size", ClientConfig.stt_beam_size)),
+        speculative_stt=bool(client.get("speculative_stt", ClientConfig.speculative_stt)),
+        spec_silence_s=float(client.get("spec_silence_s", ClientConfig.spec_silence_s)),
         local_intent=bool(client.get("local_intent", ClientConfig.local_intent)),
         classifier_model=clf.get("model", ClientConfig.classifier_model),
         classifier_reject=float(clf.get("reject_threshold", ClientConfig.classifier_reject)),

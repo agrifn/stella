@@ -25,6 +25,7 @@ from .chat_injector import ChatInjector
 from .command_sender import CommandSender
 from .config import CONFIG_DIR, ClientConfig
 from .confirm import is_affirmative
+from .endpointing import speculation_valid
 from .keybind_executor import KeybindExecutor
 from .mode_switch import detect_mode_switch
 from .multicmd import split_commands
@@ -76,6 +77,12 @@ class StellaEngine:
         # Pre-STT gate thresholds (tunable so a quiet mic isn't silently dropped).
         self._min_dur = cfg.min_speech_seconds
         self._min_rms = cfg.min_speech_rms
+
+        # Speculative STT: start transcribing during the PTT hold once the live
+        # buffer ends in spec_silence_s of silence (see _start_speculation).
+        self._spec_enabled = cfg.speculative_stt
+        self._spec_silence = cfg.spec_silence_s
+        self._spec = None  # (snapshot_len, thread, holder) for the current hold
 
         # ASR n-best rescoring + "say again?" recovery + follow-up chaining.
         self._nbest = cfg.nbest_enabled
@@ -210,10 +217,30 @@ class StellaEngine:
         self._emit("status", text="ready" if self.active else f"asleep - {self._wake_key} to wake")
 
     # -- one utterance ----------------------------------------------------
+    def _start_speculation(self, snapshot):
+        """on_silence callback from capture_ptt: the pilot has stopped talking but
+        still holds PTT. Start transcribing the snapshot in the background so the
+        text is ready at release (STTHandler serializes decodes internally)."""
+        holder = {}
+
+        def run():
+            t0 = time.time()
+            try:
+                holder["text"] = self.stt.transcribe(snapshot)
+                holder["secs"] = time.time() - t0
+            except Exception:  # noqa: BLE001 - a failed speculation just misses
+                log.exception("speculative transcribe failed")
+        th = threading.Thread(target=run, daemon=True, name="stella-spec-stt")
+        self._spec = (len(snapshot), th, holder)
+        th.start()
+
     def process(self, audio):
         # Asleep: ignore PTT entirely (wake via hotkey/tray/wake-word first).
         if not self.active:
             return
+        # Claim this hold's speculative decode (if any) up front so a gated/early
+        # return can never leak it into the next utterance.
+        spec, self._spec = self._spec, None
         self._last_activity = time.time()
         t0 = time.time()
         dur = len(audio) / self.stt.samplerate
@@ -225,10 +252,25 @@ class StellaEngine:
                      "min %.2fs/%.4f - lower min_speech_rms if this eats real speech)",
                      dur, rms, self._min_dur, self._min_rms)
             return
-        text = self.stt.transcribe(audio)
+        # Speculative path: if a background decode was started during the hold and
+        # nothing was spoken after its snapshot, its transcript IS the transcript.
+        # Otherwise decode the full buffer as usual (the join cost is bounded: the
+        # in-flight speculation finishes one short decode, then the lock frees).
+        text = None
+        spec_tag = "miss" if self._spec_enabled else "off"
+        if spec is not None:
+            snap_len, th, holder = spec
+            if speculation_valid(snap_len, audio, self.stt.samplerate, self._min_rms):
+                th.join(timeout=1.0)
+                if "text" in holder:
+                    text = holder["text"]
+                    spec_tag = "hit"
+        if text is None:
+            text = self.stt.transcribe(audio)
         t_stt = time.time() - t0
         self._emit("transcript", text=text)
-        log.info("audio %.1fs | STT %.2fs (%s) -> %r", dur, t_stt, self.stt.device, text)
+        log.info("audio %.1fs | STT %.2fs (%s) spec=%s -> %r",
+                 dur, t_stt, self.stt.device, spec_tag, text)
         if not text:
             return
 
@@ -501,10 +543,16 @@ class StellaEngine:
             while not should_stop():
                 audio = None
                 if self.recorder.ptt_pressed():
-                    # Push-to-talk: record while the key is held.
+                    # Push-to-talk: record while the key is held. With speculative
+                    # STT on, transcription starts during the hold once the pilot
+                    # goes quiet (process() validates the snapshot at release).
                     audio = self.recorder.capture_ptt(
                         on_start=lambda: self._emit("listening", on=True),
                         on_stop=lambda: self._emit("listening", on=False),
+                        on_silence=self._start_speculation if self._spec_enabled else None,
+                        spec_silence_s=self._spec_silence,
+                        min_speech_s=self._min_dur,
+                        rms_gate=self._min_rms,
                     )
                 elif self._wake_event.is_set():
                     # Wake word fired: capture the command hands-free (no key). Mute the
