@@ -88,6 +88,10 @@ It runs in well under a millisecond on the CPU.
 - **Piper TTS:** built into the API image; ~100 free voices are downloadable in-app and
   it ships with `en_GB-jenny_dioco-medium`. (An optional host-side Chatterbox clone
   service still lives under [voice/](voice/) but is off by default.)
+- **Voice delivery tuning:** four per-voice synthesis knobs (pace, expressiveness,
+  cadence variation, sentence pause) make any voice sound more natural with no
+  retraining. Dial them in live from the manager's **Voice -> Delivery** panel with a
+  spoken preview; saved per voice (see [Voice delivery](#voice-delivery)).
 
 Latency: intent classification runs in-process (no network hop) and takes well under a
 millisecond; STT dominates the action path and the spoken reply follows in the
@@ -132,6 +136,37 @@ CHAT/COMMAND. Run Star Citizen in borderless/windowed so the overlay shows.
 - `.env` - all optional (see `.env.example`): classifier model override, TTS engine, and
   an optional API token. No LLM keys; never commit it.
 
+### Voice delivery
+
+Piper voices ship at robotic-sounding defaults. STELLA exposes four synthesis knobs
+that make any voice sound markedly more natural with **no retraining** - the biggest
+naturalness lever available short of a different model:
+
+| Knob | What it does | Natural range |
+| --- | --- | --- |
+| **Pace** (`length_scale`) | Phoneme duration; higher is slower/calmer | 1.0 - 1.1 |
+| **Expressiveness** (`noise_scale`) | Pitch/tone variation; too low is monotone | 0.55 - 0.70 |
+| **Cadence variation** (`noise_w_scale`) | Phoneme-timing variation; the main "not a robot" lever | 0.85 - 1.0 |
+| **Pause between sentences** (`sentence_silence`) | Breath between sentences (keep modest - long gaps can add artifacts) | 0.2 - 0.35 |
+
+Tune them live in the manager's **Voice -> Delivery** panel (with a spoken preview and
+**Reset to default**). Overrides are saved **per voice** in `tuning.json` inside the
+voices directory (next to the `.onnx` files - a Docker volume in the default setup), so
+they survive restarts, and apply on the next reply. The shipped defaults live in the
+`tts` section of `config/settings.json` (`length_scale`, `noise_scale`, `noise_w_scale`,
+`sentence_silence`) and are the fallback for any voice without its own override.
+
+The same values are reachable over the API for scripting:
+
+```bash
+# read the active voice's effective tuning
+curl -s http://127.0.0.1:8420/voices/tuning
+# set a calmer delivery for one voice (omitted fields keep their value)
+curl -s -X PUT "http://127.0.0.1:8420/voices/tuning?voice=en_US-amy-medium" \
+     -H 'Content-Type: application/json' \
+     -d '{"length_scale":1.06,"noise_scale":0.6,"noise_w_scale":0.9,"sentence_silence":0.25}'
+```
+
 ## Layout
 
 ```
@@ -141,8 +176,9 @@ client/   engine (shared voice loop), app (overlay), overlay, audio_capture (PTT
           hands-free), endpointing (speculative STT decisions), wake_word,
           stt_handler, local_intent (in-process classifier), mode_switch, multicmd,
           confirm, keybind_executor, chat_injector, command_sender, audio_player,
-          command_manager + commands_api (GUI), cuda_paths, config
-config/   keybinds.json, settings.json
+          command_manager + commands_api (GUI), ui/ (manager pages + theme),
+          cuda_paths, config
+config/   keybinds.json, settings.json (tts defaults incl. delivery tuning)
 tools/    offline eval scripts (classifier_eval, slot_eval, combined_eval, add_acks)
 tests/    pure-logic unit tests (no CUDA / PyQt / pydirectinput needed)
 docs/     setup.md, latency.md
