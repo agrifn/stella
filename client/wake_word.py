@@ -52,6 +52,7 @@ class WakeWordListener:
         self._refractory = refractory_s
         self._buf = np.zeros(0, dtype=np.int16)
         self._last_fire = 0.0
+        self._last_watch = 0.0
         self._enabled = True
         self._model = None
         self._name = None
@@ -78,11 +79,21 @@ class WakeWordListener:
             while len(self._buf) >= _FRAME:
                 frame, self._buf = self._buf[:_FRAME], self._buf[_FRAME:]
                 scores = self._model.predict(frame)
-                if scores.get(self._name, 0.0) >= self.threshold:
+                score = scores.get(self._name, 0.0)
+                if score >= self.threshold:
                     now = time.time()
                     if now - self._last_fire >= self._refractory:
                         self._last_fire = now
-                        log.info("wake word detected (%.2f)", scores[self._name])
+                        log.info("wake word detected (%.2f)", score)
                         self.on_wake()
+                elif score >= 0.1:
+                    # Calibration aid: a sub-threshold hit means the model heard
+                    # something wake-like. Throttled to ~1/s so saying "Stella" shows
+                    # its peak score in the log - set wake_word_threshold just under it.
+                    now = time.time()
+                    if now - self._last_watch >= 1.0:
+                        self._last_watch = now
+                        log.info("wake near-miss: %.2f (threshold %.2f - lower it below "
+                                 "your peak to trigger)", score, self.threshold)
         except Exception:  # noqa: BLE001 - detection must never crash the audio path
             log.exception("wake-word detection error")
