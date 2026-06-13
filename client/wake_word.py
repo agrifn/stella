@@ -25,6 +25,24 @@ log = logging.getLogger("stella.wake")
 _FRAME = 1280  # samples @ 16 kHz = 80 ms, the openWakeWord frame size
 
 
+def _ensure_base_models() -> None:
+    """openWakeWord needs two shared feature models (melspectrogram, embedding) that
+    are NOT bundled with the pip package - they download on first setup. A fresh
+    `pip install` therefore has the wake model's deps but not these, so Model() would
+    fail. Fetch them once if missing (network only on the first run), mirroring how
+    the server auto-downloads its default Piper voice."""
+    import os
+
+    import openwakeword
+    res = os.path.join(os.path.dirname(openwakeword.__file__), "resources", "models")
+    needed = ("melspectrogram.onnx", "embedding_model.onnx")
+    if all(os.path.exists(os.path.join(res, m)) for m in needed):
+        return
+    log.info("downloading openWakeWord base feature models (one-time)...")
+    from openwakeword.utils import download_models
+    download_models(model_names=[])  # empty list = base feature models only
+
+
 class WakeWordListener:
     def __init__(self, model_path: str, threshold: float, samplerate: int,
                  on_wake: Callable[[], None], refractory_s: float = 2.0):
@@ -38,6 +56,7 @@ class WakeWordListener:
         self._model = None
         self._name = None
         # Lazy import so openwakeword is only required when the feature is on.
+        _ensure_base_models()
         from openwakeword.model import Model  # noqa: PLC0415
 
         self._model = Model(wakeword_models=[model_path], inference_framework="onnx")

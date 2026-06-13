@@ -20,3 +20,8 @@ pydirectinput
 
 # Command-manager GUI (Phase 3) and overlay (Phase 4)
 PyQt6
+
+# Optional spoken wake word ("Stella"). Only needed when wake_word_enabled=true and
+# a wake_word_model is configured; uses the onnx inference path (onnxruntime, already
+# pulled in by faster-whisper). Bring your own trained .onnx wake model.
+openwakeword>=0.6
